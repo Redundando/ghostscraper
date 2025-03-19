@@ -1,6 +1,5 @@
 import subprocess
 import sys
-from typing import Optional
 import os
 from playwright.async_api import async_playwright, Browser, BrowserContext
 from logorator import Logger
@@ -21,6 +20,7 @@ async def check_browser_installed(browser_name: str) -> bool:
             Logger.note(f"❌ {browser_name} is NOT installed or failed to launch: {e}")
             return False
 
+@Logger()
 def install_browser(browser_type: str) -> bool:
     try:
         Logger.note(f"\n[Ghostscraper] Installing {browser_type} browser (first-time setup)")

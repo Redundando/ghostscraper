@@ -10,7 +10,7 @@ from .playwright_scraper import PlaywrightScraper
 
 
 class GhostScraper(JSONCache):
-    def __init__(self, url="", clear_cache=False, markdown_options: Optional[Dict[str, Any]] = None, **kwargs):
+    def __init__(self, url="", clear_cache=False, ttl=999,markdown_options: Optional[Dict[str, Any]] = None, **kwargs):
         self.url = url
         self._html: str | None = None
         self._soup: BeautifulSoup | None = None
@@ -19,7 +19,7 @@ class GhostScraper(JSONCache):
         self.kwargs = kwargs
         self._markdown_options = markdown_options or {}
 
-        JSONCache.__init__(self, data_id=f"{slugify(self.url)}", directory="data/ghostscraper", clear_cache=clear_cache, ttl=999)
+        JSONCache.__init__(self, data_id=f"{slugify(self.url)}", directory="data/ghostscraper", clear_cache=clear_cache, ttl=ttl)
 
     def __str__(self):
         return f"{self.url}"
