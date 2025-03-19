@@ -4,7 +4,7 @@ from typing import Any, Dict, List, Literal, Optional, Tuple
 from logorator import Logger
 from playwright.async_api import async_playwright, Browser, BrowserContext, Page, Playwright, TimeoutError as PlaywrightTimeoutError
 
-from playwright_installer import check_browser_installed, install_browser
+from .playwright_installer import check_browser_installed, install_browser
 
 
 class PlaywrightScraper:
@@ -29,6 +29,12 @@ class PlaywrightScraper:
         self._browser: Optional[Browser] = None
         self._context: Optional[BrowserContext] = None
         self.last_status_code: int = 200
+
+    def __str__(self):
+        return self.url
+
+    def __repr__(self):
+        return self.__str__()
 
     async def check_and_install_browser(self):
         if PlaywrightScraper.BROWSERS_CHECKED.get(self.browser_type) is not None:
@@ -199,18 +205,3 @@ class PlaywrightScraper:
 
     async def __aexit__(self, exc_type, exc_val, exc_tb):
         await self.close()
-
-
-if __name__ == "__main__":
-    async def main():
-        urls = ["https://en.wikipedia.org/wiki/Debbie_Wasserman_Schultz", "https://en.wikipedia.org/wiki/Chuck_Schumer", "https://playwright.dev/python/docs/library"]
-        pws = []
-        tasks = []
-        for url in urls:
-            s = PlaywrightScraper(url=url)
-            pws.append(s)
-            tasks.append(asyncio.create_task(s.fetch_and_close()))
-        await asyncio.gather(*tasks)
-
-
-    asyncio.run(main())
