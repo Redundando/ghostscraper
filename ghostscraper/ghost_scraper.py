@@ -7,9 +7,13 @@ from slugify import slugify
 
 from .playwright_scraper import PlaywrightScraper
 import html2text
+import newspaper
 
 class GhostScraper(JSONCache):
     def __init__(self, url="", clear_cache=False, ttl=999,markdown_options: Optional[Dict[str, Any]] = None, **kwargs):
+        self._text: str|None = None
+        self._authors: str|None = None
+        self._article: newspaper.Article | None = None
         self.url = url
         self._html: str | None = None
         self._soup: BeautifulSoup | None = None
@@ -54,6 +58,25 @@ class GhostScraper(JSONCache):
             h.ignore_images = False
             self._markdown = h.handle(await self.html())
         return self._markdown
+
+    async def article(self) -> newspaper.Article:
+        if self._article is None:
+            article = newspaper.Article(self.url)
+            article.download(input_html=await self.html())
+            article.parse()
+            self._article = article
+        return self._article
+
+    async def text(self) -> str:
+        if self._text is None:
+            self._text = (await self.article()).text
+        return self._text
+
+    async def authors(self) -> str:
+        if self._authors is None:
+            self._authors = (await self.article()).authors
+        return self._authors
+
 
     async def soup(self) -> BeautifulSoup:
         if self._soup is None:

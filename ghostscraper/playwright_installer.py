@@ -4,6 +4,7 @@ import os
 from playwright.async_api import async_playwright, Browser, BrowserContext
 from logorator import Logger
 
+
 async def check_browser_installed(browser_name: str) -> bool:
     async with async_playwright() as p:
         browsers = {"chromium": p.chromium, "firefox": p.firefox, "webkit": p.webkit, }
