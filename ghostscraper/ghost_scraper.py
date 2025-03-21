@@ -5,9 +5,8 @@ from bs4 import BeautifulSoup
 from cacherator import Cached, JSONCache
 from slugify import slugify
 
-from .markdown_converter import MarkdownConverter
 from .playwright_scraper import PlaywrightScraper
-
+import html2text
 
 class GhostScraper(JSONCache):
     def __init__(self, url="", clear_cache=False, ttl=999,markdown_options: Optional[Dict[str, Any]] = None, **kwargs):
@@ -49,8 +48,11 @@ class GhostScraper(JSONCache):
 
     async def markdown(self) -> str:
         if self._markdown is None:
-            converter = MarkdownConverter(**self._markdown_options)
-            self._markdown = converter.convert(await self.html())
+            h = html2text.HTML2Text()
+            h.ignore_links = False
+            h.body_width = 0
+            h.ignore_images = False
+            self._markdown = h.handle(await self.html())
         return self._markdown
 
     async def soup(self) -> BeautifulSoup:

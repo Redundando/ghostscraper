@@ -2,10 +2,11 @@ from ghostscraper import GhostScraper
 import asyncio
 
 async def main():
-    scraper = GhostScraper(url="https://www.example.com")
-    print((await scraper.soup()).prettify())
+    scraper = GhostScraper(url="https://en.wikipedia.org/wiki/Darius_the_Great_Is_Not_Okay", clear_cache=True)
+    html = await scraper.html()
+    md = await scraper.markdown()
+    print(md)
 
 
 if __name__ == '__main__':
-    scraper = GhostScraper(url="https://www.example.com", clear_cache=True)
-    print(len(asyncio.run(scraper.html())))
+    asyncio.run(main())
