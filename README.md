@@ -274,6 +274,7 @@ This project is licensed under the MIT License.
 - python-slugify
 - logorator
 - cacherator
+- lxml_html_clean
 
 ## Contributing
 

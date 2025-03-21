@@ -25,6 +25,7 @@ dependencies = [
     "newspaper4k",
     "playwright",
     "python-slugify",
+    "lxml_html_clean"
 ]
 
 [project.urls]
