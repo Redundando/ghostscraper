@@ -1,15 +1,15 @@
-# GhostScraper
+# Ghostscraper
 
-GhostScraper is an asynchronous web scraping library built on top of Playwright that makes it easy to fetch and convert web content to Markdown format. It handles browser management, retries, and provides a clean interface for working with web content.
+A Playwright-based web scraper with persistent caching, automatic browser installation, and multiple output formats.
 
 ## Features
 
-- Asynchronous web scraping with Playwright
-- HTML to Markdown conversion
-- Built-in retry mechanism with exponential backoff
-- Result caching using JSONCache
-- Smart content extraction
-- Support for multiple browser types (Chromium, Firefox, WebKit)
+- **Headless Browser Scraping**: Uses Playwright for reliable scraping of JavaScript-heavy websites
+- **Persistent Caching**: Stores scraped data between runs for improved performance
+- **Automatic Browser Installation**: Self-installs required browsers
+- **Multiple Output Formats**: HTML, Markdown, Plain Text, BeautifulSoup
+- **Error Handling**: Robust retry mechanism with exponential backoff
+- **Asynchronous API**: Modern async/await interface
 
 ## Installation
 
@@ -17,31 +17,55 @@ GhostScraper is an asynchronous web scraping library built on top of Playwright 
 pip install ghostscraper
 ```
 
-GhostScraper will automatically install and manage required browsers during the first run.
-
 ## Basic Usage
+
+### Simple Scraping
 
 ```python
 import asyncio
 from ghostscraper import GhostScraper
 
 async def main():
-    # Create a scraper instance
+    # Initialize the scraper
     scraper = GhostScraper(url="https://example.com")
     
     # Get the HTML content
     html = await scraper.html()
+    print(html)
     
-    # Get the Markdown converted content
+    # Get plain text content
+    text = await scraper.text()
+    print(text)
+    
+    # Get markdown version
     markdown = await scraper.markdown()
-    
-    # Get the response code
-    status_code = await scraper.response_code()
-    
-    print(f"Status code: {status_code}")
-    print(f"Markdown content:\n{markdown}")
+    print(markdown)
 
 # Run the async function
+asyncio.run(main())
+```
+
+### With Custom Options
+
+```python
+import asyncio
+from ghostscraper import GhostScraper
+
+async def main():
+    # Initialize with custom options
+    scraper = GhostScraper(
+        url="https://example.com",
+        browser_type="firefox",  # Use Firefox instead of default Chromium
+        headless=False,          # Show the browser window
+        load_timeout=60000,      # 60 seconds timeout
+        clear_cache=True,        # Clear previous cache
+        ttl=1,                   # Cache for 1 day
+    )
+    
+    # Get the HTML content
+    html = await scraper.html()
+    print(html)
+
 asyncio.run(main())
 ```
 
@@ -49,7 +73,7 @@ asyncio.run(main())
 
 ### GhostScraper
 
-The main class for scraping and converting web content.
+The main class for web scraping with persistent caching.
 
 #### Constructor
 
@@ -57,138 +81,200 @@ The main class for scraping and converting web content.
 GhostScraper(
     url: str = "",
     clear_cache: bool = False,
+    ttl: int = 999,
     markdown_options: Optional[Dict[str, Any]] = None,
     **kwargs
 )
 ```
 
-- `url`: The URL to scrape
-- `clear_cache`: Whether to clear the cache before scraping
-- `markdown_options`: Options for the Markdown converter
-- `**kwargs`: Additional arguments passed to the PlaywrightScraper
+**Parameters**:
+- `url` (str): The URL to scrape.
+- `clear_cache` (bool): Whether to clear existing cache on initialization.
+- `ttl` (int): Time-to-live for cached data in days.
+- `markdown_options` (Dict[str, Any]): Options for HTML to Markdown conversion.
+- `**kwargs`: Additional options passed to PlaywrightScraper.
+
+**Playwright Options (passed via kwargs)**:
+- `browser_type` (str): Browser engine to use, one of "chromium", "firefox", or "webkit". Default: "chromium".
+- `headless` (bool): Whether to run the browser in headless mode. Default: True.
+- `browser_args` (Dict[str, Any]): Additional arguments to pass to the browser.
+- `context_args` (Dict[str, Any]): Additional arguments to pass to the browser context.
+- `max_retries` (int): Maximum number of retry attempts. Default: 3.
+- `backoff_factor` (float): Factor for exponential backoff between retries. Default: 2.0.
+- `network_idle_timeout` (int): Milliseconds to wait for network to be idle. Default: 10000 (10 seconds).
+- `load_timeout` (int): Milliseconds to wait for page to load. Default: 30000 (30 seconds).
+- `wait_for_selectors` (List[str]): CSS selectors to wait for before considering page loaded.
 
 #### Methods
 
-- `async html() -> str`: Get the HTML content of the URL
-- `async response_code() -> int`: Get the HTTP response code
-- `async markdown() -> str`: Get the content converted to Markdown
-- `async soup() -> BeautifulSoup`: Get a BeautifulSoup object for the HTML content
+##### `async html() -> str`
 
-### **kwargs Keywords
+Returns the raw HTML content of the page.
 
-The GhostScraper constructor accepts any keyword arguments and passes them directly to the underlying PlaywrightScraper. This allows you to customize the browser behavior without directly interacting with the PlaywrightScraper class.
+##### `async response_code() -> int`
+
+Returns the HTTP response code from the page request.
+
+##### `async markdown() -> str`
+
+Returns the page content converted to Markdown.
+
+##### `async article() -> newspaper.Article`
+
+Returns a newspaper.Article object with parsed content.
+
+##### `async text() -> str`
+
+Returns the plain text content of the page.
+
+##### `async authors() -> str`
+
+Returns the detected authors of the content.
+
+##### `async soup() -> BeautifulSoup`
+
+Returns a BeautifulSoup object for the page.
+
+### PlaywrightScraper
+
+Low-level browser automation class used by GhostScraper.
+
+#### Constructor
 
 ```python
-# GhostScraper accepts all these keyword arguments which are passed to PlaywrightScraper
-scraper = GhostScraper(
-    url="https://example.com",
-    browser_type="chromium",     # Browser to use: "chromium", "firefox", or "webkit"
-    headless=True,               # Run browser in headless mode
-    browser_args={},             # Arguments for browser launcher
-    context_args={},             # Arguments for browser context
-    max_retries=3,               # Maximum retry attempts
-    backoff_factor=2.0,          # Exponential backoff factor
-    network_idle_timeout=10000,  # Network idle timeout (ms)
-    load_timeout=30000,          # Page load timeout (ms)
-    wait_for_selectors=[]        # CSS selectors to wait for
+PlaywrightScraper(
+    url: str = "",
+    browser_type: Literal["chromium", "firefox", "webkit"] = "chromium",
+    headless: bool = True,
+    browser_args: Optional[Dict[str, Any]] = None,
+    context_args: Optional[Dict[str, Any]] = None,
+    max_retries: int = 3,
+    backoff_factor: float = 2.0,
+    network_idle_timeout: int = 10000,
+    load_timeout: int = 30000,
+    wait_for_selectors: Optional[List[str]] = None
 )
 ```
 
-These keyword arguments configure how the page is loaded, browser behavior, and retry mechanisms.
+**Parameters**: Same as listed in GhostScraper kwargs above.
+
+#### Methods
+
+##### `async fetch() -> Tuple[str, int]`
+
+Fetches the page and returns a tuple of (html_content, status_code).
+
+##### `async fetch_and_close() -> Tuple[str, int]`
+
+Fetches the page, closes the browser, and returns a tuple of (html_content, status_code).
+
+##### `async close() -> None`
+
+Closes the browser and playwright resources.
+
+##### `async check_and_install_browser() -> bool`
+
+Checks if the required browser is installed, and installs it if not. Returns True if successful.
 
 ## Advanced Usage
+
+### Custom Browser Configurations
+
+```python
+from ghostscraper import GhostScraper
+
+# Set up a browser with custom viewport size and user agent
+browser_context_args = {
+    "viewport": {"width": 1920, "height": 1080},
+    "user_agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"
+}
+
+scraper = GhostScraper(
+    url="https://example.com",
+    context_args=browser_context_args
+)
+```
+
+### Waiting for Dynamic Content
+
+```python
+from ghostscraper import GhostScraper
+
+# Wait for specific elements to load before considering the page ready
+scraper = GhostScraper(
+    url="https://example.com/dynamic-page",
+    wait_for_selectors=["#content", ".product-list", "button.load-more"]
+)
+```
 
 ### Custom Markdown Options
 
 ```python
 from ghostscraper import GhostScraper
 
-# Configure the Markdown converter
+# Customize the markdown conversion
 markdown_options = {
-    "strip_tags": ["script", "style", "nav", "footer", "header", "aside"],
-    "keep_tags": ["article", "main", "div", "section", "p"],
-    "content_selectors": ["article", "main", ".content", "#content"],
-    "preserve_images": True,
-    "preserve_links": True,
-    "preserve_tables": True,
-    "include_title": True,
-    "compact_output": False
+    "ignore_links": True,
+    "ignore_images": True,
+    "bullet_character": "*"
 }
 
-# Create a scraper with custom Markdown options
 scraper = GhostScraper(
     url="https://example.com",
     markdown_options=markdown_options
 )
 ```
 
-### Custom Browser Configuration
+### Browser Management
 
 ```python
-from ghostscraper import GhostScraper
+from ghostscraper import check_browser_installed, install_browser
+import asyncio
 
-# Create a scraper with custom browser settings
-scraper = GhostScraper(
-    url="https://example.com",
-    # Browser configuration options (passed to PlaywrightScraper)
-    browser_type="firefox",                         # Use Firefox instead of Chromium
-    headless=False,                                 # Show the browser window
-    max_retries=5,                                  # Increase retry attempts
-    load_timeout=60000,                             # Increase load timeout to 60 seconds
-    wait_for_selectors=[".content", ".main-article"] # Wait for these selectors
-)
+async def setup_browsers():
+    # Check if browsers are installed
+    chromium_installed = await check_browser_installed("chromium")
+    firefox_installed = await check_browser_installed("firefox")
+    
+    # Install browsers if needed
+    if not chromium_installed:
+        install_browser("chromium")
+    
+    if not firefox_installed:
+        install_browser("firefox")
 
-# You can also pass browser-specific arguments
-scraper = GhostScraper(
-    url="https://example.com",
-    browser_args={
-        "proxy": {                                  # Set up a proxy
-            "server": "http://myproxy.com:8080",
-            "username": "user",
-            "password": "pass"
-        },
-        "slowMo": 50,                               # Slow down browser operations by 50ms
-    },
-    context_args={
-        "userAgent": "Custom User Agent",           # Set custom user agent
-        "viewport": {"width": 1920, "height": 1080} # Set viewport size
-    }
-)
+asyncio.run(setup_browsers())
 ```
 
-### Progressive Loading Strategy
+## Performance Considerations
 
-GhostScraper uses a progressive loading strategy that tries different methods to load the page:
+- Use caching effectively by setting appropriate TTL values
+- Consider browser memory usage when scraping multiple pages
+- For best performance, use "chromium" as it's generally the fastest engine
 
-1. First tries with `networkidle` - waits until network is idle
-2. If that fails, tries with `load` - waits for the load event
-3. If that fails, tries with `domcontentloaded` - waits for DOM content loaded
+## Error Handling
 
-This ensures maximum compatibility with different websites.
+GhostScraper uses a progressive loading strategy:
+1. First attempts with "networkidle" (most reliable)
+2. Falls back to "load" event if timeout occurs
+3. Finally tries "domcontentloaded" (fastest but least complete)
 
-### Browser Installation
-
-GhostScraper automatically checks if the required browser is installed and installs it if needed:
-
-```python
-# Install browsers manually if needed
-from ghostscraper import install_browser
-
-# Install a specific browser type
-install_browser("chromium")
-install_browser("firefox")
-install_browser("webkit")
-```
-
-### Using Caching
-
-By default, GhostScraper caches results in the `data/ghostscraper` directory. To clear the cache:
-
-```python
-# Clear cache for a specific URL
-scraper = GhostScraper(url="https://example.com", clear_cache=True)
-```
+If all strategies fail, it will retry up to `max_retries` with exponential backoff.
 
 ## License
 
-MIT
+This project is licensed under the MIT License.
+
+## Dependencies
+
+- playwright
+- beautifulsoup4
+- html2text
+- newspaper4k
+- python-slugify
+- logorator
+- cacherator
+
+## Contributing
+
+Contributions are welcome! Visit the GitHub repository: https://github.com/Redundando/ghostscraper

@@ -1,46 +1,35 @@
 [build-system]
-requires = ["hatchling"]
-build-backend = "hatchling.build"
+requires = ["setuptools>=42", "wheel"]
+build-backend = "setuptools.build_meta"
 
 [project]
 name = "ghostscraper"
-version = "0.0.1"
-description = "An asynchronous web scraper using Playwright with HTML to Markdown conversion"
+version = "0.0.2"
+description = "A Playwright-based web scraper with caching capabilities"
 readme = "README.md"
 authors = [
     {name = "Arved Klöhn", email = "arved.kloehn@gmail.com"},
 ]
 license = {text = "MIT"}
 classifiers = [
-    "Development Status :: 4 - Beta",
-    "Intended Audience :: Developers",
-    "License :: OSI Approved :: MIT License",
     "Programming Language :: Python :: 3",
-    "Programming Language :: Python :: 3.8",
-    "Programming Language :: Python :: 3.9",
-    "Programming Language :: Python :: 3.10",
-    "Programming Language :: Python :: 3.11",
-    "Topic :: Internet :: WWW/HTTP",
-    "Topic :: Software Development :: Libraries :: Python Modules",
-    "Topic :: Text Processing :: Markup :: HTML",
-    "Topic :: Text Processing :: Markup :: Markdown",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: OS Independent",
 ]
-keywords = ["web scraping", "playwright", "markdown", "html", "converter", "async"]
+requires-python = ">=3.7"
 dependencies = [
-    "playwright>=1.30.0",
-    "beautifulsoup4>=4.10.0",
+    "beautifulsoup4",
     "cacherator",
+    "html2text",
     "logorator",
-    "python-slugify>=8.0.0",
+    "newspaper4k",
+    "playwright",
+    "python-slugify",
 ]
-requires-python = ">=3.8"
 
 [project.urls]
-Homepage = "https://github.com/Redundando/ghostscraper"
-Issues = "https://github.com/Redundando/ghostscraper/issues"
+"Homepage" = "https://github.com/Redundando/ghostscraper"
+"Bug Tracker" = "https://github.com/Redundando/ghostscraper/issues"
 
-[tool.hatch.build.targets.wheel]
+[tool.setuptools]
 packages = ["ghostscraper"]
-
-[tool.hatch.build.targets.sdist]
-include = ["ghostscraper"]
