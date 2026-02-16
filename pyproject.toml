@@ -1,0 +1,49 @@
+[build-system]
+requires = ["setuptools>=42", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "ghostscraper"
+version = "0.2.0"
+description = "A Playwright-based web scraper with persistent caching, parallel scraping, and multiple output formats"
+readme = "README.md"
+authors = [
+    {name = "Arved Klöhn", email = "arved.kloehn@gmail.com"},
+]
+license = "MIT"
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: Developers",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.8",
+    "Programming Language :: Python :: 3.9",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Operating System :: OS Independent",
+    "Topic :: Internet :: WWW/HTTP",
+    "Topic :: Software Development :: Libraries :: Python Modules",
+    "Typing :: Typed",
+]
+keywords = ["scraping", "web-scraping", "playwright", "async", "caching", "parallel"]
+requires-python = ">=3.8"
+dependencies = [
+    "beautifulsoup4",
+    "cacherator",
+    "html2text",
+    "logorator",
+    "newspaper4k",
+    "playwright",
+    "python-slugify",
+    "lxml_html_clean"
+]
+
+[project.urls]
+"Homepage" = "https://github.com/Redundando/ghostscraper"
+"Bug Tracker" = "https://github.com/Redundando/ghostscraper/issues"
+
+[tool.setuptools]
+packages = ["ghostscraper"]
+
+[tool.setuptools.package-data]
+ghostscraper = ["py.typed"]

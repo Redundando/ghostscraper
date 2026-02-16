@@ -1,0 +1,8 @@
+beautifulsoup4
+cacherator
+html2text
+logorator
+newspaper4k
+playwright
+python-slugify
+lxml_html_clean
