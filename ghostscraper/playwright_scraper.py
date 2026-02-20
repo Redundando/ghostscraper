@@ -88,7 +88,7 @@ class PlaywrightScraper:
             return True
         else:
             install_browser(self.browser_type)
-            PlaywrightScraper.BROWSERS_CHECKED[self.browser_type] = asyncio.run(check_browser_installed(self.browser_type))
+            PlaywrightScraper.BROWSERS_CHECKED[self.browser_type] = await check_browser_installed(self.browser_type)
             return PlaywrightScraper.BROWSERS_CHECKED[self.browser_type]
 
     async def _ensure_browser(self) -> None:

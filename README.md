@@ -2,6 +2,15 @@
 
 A Playwright-based web scraper with persistent caching, automatic browser installation, and multiple output formats.
 
+## Changelog
+
+### v0.2.1 (Latest)
+- Fixed RuntimeError when browser installation check runs within an active event loop
+- Improved compatibility with Linux and other Unix-like systems
+
+### v0.2.0
+- Initial stable release
+
 ## Features
 
 - **Headless Browser Scraping**: Uses Playwright for reliable scraping of JavaScript-heavy websites
