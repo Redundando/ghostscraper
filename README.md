@@ -4,7 +4,12 @@ A Playwright-based web scraper with persistent caching, automatic browser instal
 
 ## Changelog
 
-### v0.2.1 (Latest)
+### v0.3.0 (Latest)
+- Added DynamoDB L2 cache support for cross-machine cache sharing
+- Simplified logging to boolean (`logging=True/False`)
+- Added `dynamodb_table` parameter to `GhostScraper` and `scrape_many()`
+
+### v0.2.1
 - Fixed RuntimeError when browser installation check runs within an active event loop
 - Improved compatibility with Linux and other Unix-like systems
 
@@ -16,9 +21,10 @@ A Playwright-based web scraper with persistent caching, automatic browser instal
 - **Headless Browser Scraping**: Uses Playwright for reliable scraping of JavaScript-heavy websites
 - **Parallel Scraping**: Scrape multiple URLs concurrently with shared browser instances
 - **Persistent Caching**: Stores scraped data between runs for improved performance
+- **DynamoDB L2 Cache**: Optional cross-machine cache sharing via AWS DynamoDB
 - **Automatic Browser Installation**: Self-installs required browsers
 - **Multiple Output Formats**: HTML, Markdown, Plain Text, BeautifulSoup
-- **Three-Level Logging**: Control verbosity with "none", "normal", or "verbose" modes
+- **Boolean Logging**: Enable/disable logging with `logging=True/False`
 - **Error Handling**: Robust retry mechanism with exponential backoff
 - **Asynchronous API**: Modern async/await interface
 - **Type Hints**: Full type annotation support for better IDE integration
@@ -73,8 +79,8 @@ async def main():
     # Scrape multiple URLs in parallel with a shared browser
     scrapers = await GhostScraper.scrape_many(
         urls=urls,
-        max_concurrent=3,  # Process 3 pages at a time
-        log_level="normal"  # Options: "none", "normal", "verbose"
+        max_concurrent=3,
+        logging=True
     )
     
     # Access results from each scraper
@@ -100,12 +106,35 @@ async def main():
         load_timeout=60000,      # 60 seconds timeout
         clear_cache=True,        # Clear previous cache
         ttl=1,                   # Cache for 1 day
-        log_level="verbose"      # Options: "none", "normal", "verbose"
+        logging=True             # Enable logging
     )
     
     # Get the HTML content
     html = await scraper.html()
     print(html)
+
+asyncio.run(main())
+```
+
+### With DynamoDB Cache
+
+```python
+import asyncio
+from ghostscraper import GhostScraper
+
+async def main():
+    # Single scraper with DynamoDB L2 cache
+    scraper = GhostScraper(
+        url="https://example.com",
+        dynamodb_table="my-cache-table"  # Requires AWS credentials
+    )
+    html = await scraper.html()
+
+    # Batch scraping with DynamoDB
+    scrapers = await GhostScraper.scrape_many(
+        urls=["https://example.com", "https://python.org"],
+        dynamodb_table="my-cache-table"
+    )
 
 asyncio.run(main())
 ```
@@ -124,7 +153,8 @@ GhostScraper(
     clear_cache: bool = False,
     ttl: int = 999,
     markdown_options: Optional[Dict[str, Any]] = None,
-    log_level: LogLevel = "normal",
+    logging: bool = True,
+    dynamodb_table: Optional[str] = None,
     **kwargs
 )
 ```
@@ -134,7 +164,8 @@ GhostScraper(
 - `clear_cache` (bool): Whether to clear existing cache on initialization.
 - `ttl` (int): Time-to-live for cached data in days.
 - `markdown_options` (Dict[str, Any]): Options for HTML to Markdown conversion.
-- `log_level` (LogLevel): Logging level - "none", "normal", or "verbose". Default: "normal".
+- `logging` (bool): Enable/disable logging. Default: True.
+- `dynamodb_table` (str): DynamoDB table name for cross-machine caching. Default: None.
 - `**kwargs`: Additional options passed to PlaywrightScraper.
 
 **Playwright Options (passed via kwargs)**:
@@ -147,7 +178,6 @@ GhostScraper(
 - `network_idle_timeout` (int): Milliseconds to wait for network to be idle. Default: 10000 (10 seconds).
 - `load_timeout` (int): Milliseconds to wait for page to load. Default: 30000 (30 seconds).
 - `wait_for_selectors` (List[str]): CSS selectors to wait for before considering page loaded.
-- `log_level` (LogLevel): Logging level - "none", "normal", or "verbose". Default: "normal".
 
 #### Methods
 
@@ -179,15 +209,15 @@ Returns the detected authors of the content.
 
 Returns a BeautifulSoup object for the page.
 
-##### `@classmethod async scrape_many(urls: List[str], max_concurrent: int = 5, log_level: LogLevel = "normal", **kwargs) -> List[GhostScraper]`
+##### `@classmethod async scrape_many(urls: List[str], max_concurrent: int = 5, logging: bool = True, **kwargs) -> List[GhostScraper]`
 
 Scrape multiple URLs in parallel using a shared browser instance.
 
 **Parameters**:
 - `urls` (List[str]): List of URLs to scrape.
 - `max_concurrent` (int): Maximum number of concurrent page loads. Default: 5.
-- `log_level` (LogLevel): Logging level - "none", "normal", or "verbose". Default: "normal".
-- `**kwargs`: Additional options passed to PlaywrightScraper (same as constructor).
+- `logging` (bool): Enable/disable logging. Default: True.
+- `**kwargs`: Additional options passed to GhostScraper and PlaywrightScraper.
 
 **Returns**: List of GhostScraper instances with cached results.
 
@@ -209,7 +239,7 @@ PlaywrightScraper(
     network_idle_timeout: int = 10000,
     load_timeout: int = 30000,
     wait_for_selectors: Optional[List[str]] = None,
-    log_level: LogLevel = "normal"
+    logging: bool = True
 )
 ```
 
@@ -250,9 +280,10 @@ from ghostscraper import ScraperDefaults
 
 # Modify defaults for all future scraper instances
 ScraperDefaults.MAX_CONCURRENT = 20
-ScraperDefaults.LOG_LEVEL = "verbose"
+ScraperDefaults.LOGGING = False
 ScraperDefaults.HEADLESS = False
 ScraperDefaults.LOAD_TIMEOUT = 30000
+ScraperDefaults.DYNAMODB_TABLE = "my-cache-table"
 ```
 
 ### Batch Scraping with Options
@@ -272,7 +303,7 @@ async def main():
         headless=True,
         load_timeout=60000,
         ttl=7,  # Cache for 7 days
-        log_level="verbose"  # Show detailed progress
+        logging=True
     )
     
     # Process results
@@ -358,7 +389,7 @@ asyncio.run(setup_browsers())
 - Adjust `max_concurrent` based on your system resources and target website rate limits
 - Consider browser memory usage when scraping multiple pages
 - For best performance, use "chromium" as it's generally the fastest engine
-- Use `log_level="none"` for production to minimize overhead
+- Use `logging=False` for production to minimize overhead
 
 ## Error Handling
 

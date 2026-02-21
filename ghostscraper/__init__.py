@@ -18,14 +18,13 @@ Example:
 from .playwright_scraper import PlaywrightScraper
 from .ghost_scraper import GhostScraper
 from .playwright_installer import check_browser_installed, install_browser
-from .config import ScraperDefaults, LogLevel
+from .config import ScraperDefaults
 
 __version__ = "0.2.0"
 __all__ = [
     "GhostScraper",
     "PlaywrightScraper",
     "ScraperDefaults",
-    "LogLevel",
     "check_browser_installed",
     "install_browser",
 ]

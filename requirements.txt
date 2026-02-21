@@ -1,8 +1,12 @@
 beautifulsoup4
-cacherator
+cacherator>=1.2.4
 html2text
 logorator
 newspaper4k
 playwright
 python-slugify
 lxml_html_clean
+readmerator
+publisherator
+logorator
+dynamorator

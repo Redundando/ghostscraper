@@ -11,7 +11,7 @@ from logorator import Logger
 from playwright.async_api import async_playwright, Browser, BrowserContext, Page, Playwright, TimeoutError as PlaywrightTimeoutError
 
 from .playwright_installer import check_browser_installed, install_browser
-from .config import ScraperDefaults, LogLevel
+from .config import ScraperDefaults
 
 
 class PlaywrightScraper:
@@ -24,7 +24,7 @@ class PlaywrightScraper:
         url (str): The URL to scrape.
         browser_type (str): Browser engine - "chromium", "firefox", or "webkit".
         headless (bool): Whether to run browser in headless mode.
-        log_level (LogLevel): Logging verbosity level.
+        logging (bool): Enable/disable logging.
     """
     
     BROWSERS_CHECKED = {}
@@ -36,7 +36,7 @@ class PlaywrightScraper:
                  network_idle_timeout: int = ScraperDefaults.NETWORK_IDLE_TIMEOUT,
                  load_timeout: int = ScraperDefaults.LOAD_TIMEOUT,
                  wait_for_selectors: Optional[List[str]] = None,
-                 log_level: LogLevel = ScraperDefaults.LOG_LEVEL
+                 logging: bool = ScraperDefaults.LOGGING
     ):
         """Initialize a PlaywrightScraper instance.
         
@@ -51,7 +51,7 @@ class PlaywrightScraper:
             network_idle_timeout (int): Network idle timeout in milliseconds. Defaults to 3000.
             load_timeout (int): Page load timeout in milliseconds. Defaults to 20000.
             wait_for_selectors (List[str], optional): CSS selectors to wait for before considering page loaded.
-            log_level (LogLevel): Logging level - "none", "normal", or "verbose". Defaults to "normal".
+            logging (bool): Enable logging. Defaults to True.
         """
         self.url = url
         self.browser_type: str = browser_type
@@ -63,7 +63,7 @@ class PlaywrightScraper:
         self.network_idle_timeout: int = network_idle_timeout
         self.load_timeout: int = load_timeout
         self.wait_for_selectors: List[str] = wait_for_selectors or []
-        self.log_level: LogLevel = log_level
+        self.logging: bool = logging
         self._playwright: Optional[Playwright] = None
         self._browser: Optional[Browser] = None
         self._context: Optional[BrowserContext] = None
@@ -128,43 +128,43 @@ class PlaywrightScraper:
         """
         # Strategy 1: Try with 'load' first (fast and reliable for most sites)
         try:
-            if self.log_level == "verbose":
+            if self.logging:
                 Logger.note(f"  ⏳ Loading strategy: load (timeout: {self.load_timeout}ms)")
             response = await page.goto(url, wait_until="load", timeout=self.load_timeout)
             status_code = response.status if response else 200
-            if self.log_level == "verbose":
+            if self.logging:
                 Logger.note(f"  ✓ Success with load - Status: {status_code}")
             return True, status_code
         except PlaywrightTimeoutError:
-            if self.log_level == "verbose":
+            if self.logging:
                 Logger.note("  ⚠ load timeout, trying 'networkidle'...")
             pass
 
         # Strategy 2: Fallback to networkidle (slower but more complete)
         try:
-            if self.log_level == "verbose":
+            if self.logging:
                 Logger.note(f"  ⏳ Loading strategy: networkidle (timeout: {self.network_idle_timeout}ms)")
             response = await page.goto(url, wait_until="networkidle", timeout=self.network_idle_timeout)
             status_code = response.status if response else 200
-            if self.log_level == "verbose":
+            if self.logging:
                 Logger.note(f"  ✓ Success with networkidle - Status: {status_code}")
             return True, status_code
         except PlaywrightTimeoutError:
-            if self.log_level == "verbose":
+            if self.logging:
                 Logger.note("  ⚠ networkidle timeout, trying 'domcontentloaded'...")
             pass
 
         # Strategy 3: Fallback to domcontentloaded (fastest but least complete)
         try:
-            if self.log_level == "verbose":
+            if self.logging:
                 Logger.note("  ⏳ Loading strategy: domcontentloaded")
             response = await page.goto(url, wait_until="domcontentloaded", timeout=self.load_timeout)
             status_code = response.status if response else 200
-            if self.log_level == "verbose":
+            if self.logging:
                 Logger.note(f"  ✓ Success with domcontentloaded - Status: {status_code}")
             return True, status_code
         except PlaywrightTimeoutError:
-            if self.log_level == "verbose":
+            if self.logging:
                 Logger.note("  ❌ All loading strategies failed")
             return False, 408  # Request Timeout
 
@@ -202,7 +202,7 @@ class PlaywrightScraper:
         Returns:
             Tuple[str, int]: (html_content, status_code)
         """
-        if self.log_level in ["normal", "verbose"]:
+        if self.logging:
             Logger.note(f"🌐 Fetching: {url[:80]}...")
         await self._ensure_browser()
         attempts = 0
@@ -215,11 +215,11 @@ class PlaywrightScraper:
 
                 if not load_success:
                     if attempts == self.max_retries:
-                        if self.log_level == "verbose":
+                        if self.logging:
                             Logger.note(f"  ❌ Max retries reached - All strategies failed")
                         return "", 408
                     wait_time = self.backoff_factor ** attempts
-                    if self.log_level == "verbose":
+                    if self.logging:
                         Logger.note(f"  ⏳ Retry {attempts + 1}/{self.max_retries} in {wait_time:.1f}s")
                     await asyncio.sleep(wait_time)
                     attempts += 1
@@ -227,12 +227,12 @@ class PlaywrightScraper:
 
                 if status_code >= 400:
                     if attempts == self.max_retries:
-                        if self.log_level == "verbose":
+                        if self.logging:
                             Logger.note(f"  ❌ Max retries reached - Status {status_code}")
                         return "", status_code
 
                     wait_time = self.backoff_factor ** attempts
-                    if self.log_level == "verbose":
+                    if self.logging:
                         Logger.note(f"  ⚠ Status {status_code} - Retry {attempts + 1}/{self.max_retries} in {wait_time:.1f}s")
                     await asyncio.sleep(wait_time)
                     attempts += 1
@@ -244,24 +244,24 @@ class PlaywrightScraper:
 
             except PlaywrightTimeoutError as e:
                 if attempts == self.max_retries:
-                    if self.log_level == "verbose":
+                    if self.logging:
                         Logger.note(f"  ❌ Timeout - Max retries reached")
                     return "", 408
 
                 wait_time = self.backoff_factor ** attempts
-                if self.log_level == "verbose":
+                if self.logging:
                     Logger.note(f"  ⏳ Timeout - Retry {attempts + 1}/{self.max_retries} in {wait_time:.1f}s")
                 await asyncio.sleep(wait_time)
                 attempts += 1
 
             except Exception as e:
                 if attempts == self.max_retries:
-                    if self.log_level == "verbose":
+                    if self.logging:
                         Logger.note(f"  ❌ Error: {str(e)[:50]}... - Max retries reached")
                     return "", 500
 
                 wait_time = self.backoff_factor ** attempts
-                if self.log_level == "verbose":
+                if self.logging:
                     Logger.note(f"  ⚠ Error: {str(e)[:50]}... - Retry {attempts + 1}/{self.max_retries} in {wait_time:.1f}s")
                 await asyncio.sleep(wait_time)
                 attempts += 1
@@ -309,7 +309,7 @@ class PlaywrightScraper:
         processed_results = []
         for i, result in enumerate(results):
             if isinstance(result, Exception):
-                if self.log_level == "verbose":
+                if self.logging:
                     Logger.note(f"  ❌ Error fetching {urls[i][:60]}...: {str(result)[:40]}")
                 processed_results.append(("", 500))
             else:

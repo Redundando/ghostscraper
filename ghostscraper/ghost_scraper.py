@@ -12,7 +12,7 @@ from cacherator import Cached, JSONCache
 from slugify import slugify
 
 from .playwright_scraper import PlaywrightScraper
-from .config import ScraperDefaults, LogLevel
+from .config import ScraperDefaults
 import html2text
 import newspaper
 import asyncio
@@ -25,7 +25,7 @@ class GhostScraper(JSONCache):
     
     Attributes:
         url (str): The URL to scrape.
-        log_level (LogLevel): Logging verbosity - "none", "normal", or "verbose".
+        logging (bool): Enable/disable logging.
     
     Example:
         >>> scraper = GhostScraper(url="https://example.com")
@@ -34,7 +34,8 @@ class GhostScraper(JSONCache):
     """
     
     def __init__(self, url="", clear_cache=False, ttl=ScraperDefaults.CACHE_TTL, 
-                 markdown_options: Optional[Dict[str, Any]] = None, log_level: LogLevel = ScraperDefaults.LOG_LEVEL, **kwargs):
+                 markdown_options: Optional[Dict[str, Any]] = None, logging: bool = ScraperDefaults.LOGGING, 
+                 dynamodb_table: Optional[str] = ScraperDefaults.DYNAMODB_TABLE, **kwargs):
         """Initialize a GhostScraper instance.
         
         Args:
@@ -42,23 +43,34 @@ class GhostScraper(JSONCache):
             clear_cache (bool): Whether to clear existing cache. Defaults to False.
             ttl (int): Time-to-live for cached data in days. Defaults to 999.
             markdown_options (Dict[str, Any], optional): Options for HTML to Markdown conversion.
-            log_level (LogLevel): Logging level - "none", "normal", or "verbose". Defaults to "normal".
+            logging (bool): Enable logging. Defaults to True.
+            dynamodb_table (str, optional): DynamoDB table name for cross-machine caching. Defaults to None.
             **kwargs: Additional options passed to PlaywrightScraper (browser_type, headless, etc.).
         """
-        self._text: str|None = None
-        self._authors: str|None = None
-        self._article: newspaper.Article | None = None
         self.url = url
-        self._html: str | None = None
-        self._soup: BeautifulSoup | None = None
-        self._markdown: str | None = None
-        self._response_code: int | None = None
         self.kwargs = kwargs
-        self.log_level = log_level
+        self.logging = logging
         self._markdown_options = markdown_options or {}
-
+        
         JSONCache.__init__(self, data_id=f"{slugify(self.url)}", directory=ScraperDefaults.CACHE_DIRECTORY, 
-                          clear_cache=clear_cache, ttl=ttl, logging=(log_level == "verbose"))
+                          clear_cache=clear_cache, ttl=ttl, logging=logging, 
+                          dynamodb_table=dynamodb_table, save_on_del=False)
+        
+        # Initialize after JSONCache to allow cache loading
+        if not hasattr(self, '_html') or self._html is None:
+            self._html: str | None = None
+        if not hasattr(self, '_response_code') or self._response_code is None:
+            self._response_code: int | None = None
+        if not hasattr(self, '_text') or self._text is None:
+            self._text: str | None = None
+        if not hasattr(self, '_authors') or self._authors is None:
+            self._authors: str | None = None
+        if not hasattr(self, '_article') or self._article is None:
+            self._article: newspaper.Article | None = None
+        if not hasattr(self, '_soup') or self._soup is None:
+            self._soup: BeautifulSoup | None = None
+        if not hasattr(self, '_markdown') or self._markdown is None:
+            self._markdown: str | None = None
 
     def __str__(self):
         return f"{self.url}"
@@ -84,9 +96,10 @@ class GhostScraper(JSONCache):
             dict: Dictionary with 'html' and 'response_code' keys.
         """
         if self._response_code is None or self._html is None:
-            if self.log_level in ["normal", "verbose"]:
+            if self.logging:
                 Logger.note(f"📥 Cache miss: {self.url[:60]}... - Fetching from web")
             (self._html, self._response_code) = await self._fetch_response()
+            self.json_cache_save()
         return {"html": self._html, "response_code": self._response_code}
 
     async def html(self) -> str:
@@ -165,7 +178,7 @@ class GhostScraper(JSONCache):
 
     @classmethod
     async def scrape_many(cls, urls: List[str], max_concurrent: int = ScraperDefaults.MAX_CONCURRENT, 
-                         log_level: LogLevel = ScraperDefaults.LOG_LEVEL, **kwargs) -> List['GhostScraper']:
+                         logging: bool = ScraperDefaults.LOGGING, **kwargs) -> List['GhostScraper']:
         """Scrape multiple URLs in parallel using a shared browser instance.
         
         This method efficiently scrapes multiple URLs by sharing a single browser
@@ -175,8 +188,9 @@ class GhostScraper(JSONCache):
         Args:
             urls (List[str]): List of URLs to scrape.
             max_concurrent (int): Maximum number of concurrent page loads. Defaults to 15.
-            log_level (LogLevel): Logging level - "none", "normal", or "verbose". Defaults to "normal".
-            **kwargs: Additional arguments passed to PlaywrightScraper (browser_type, headless, etc.).
+            logging (bool): Enable logging. Defaults to True.
+            **kwargs: Additional arguments for GhostScraper (clear_cache, ttl, dynamodb_table) 
+                     and PlaywrightScraper (browser_type, headless, etc.).
             
         Returns:
             List[GhostScraper]: List of GhostScraper instances with cached results.
@@ -187,11 +201,15 @@ class GhostScraper(JSONCache):
             >>> for scraper in scrapers:
             ...     text = await scraper.text()
         """
-        if log_level in ["normal", "verbose"]:
+        if logging:
             Logger.note(f"\n🚀 Starting batch scrape: {len(urls)} URLs | Concurrency: {max_concurrent}")
         
+        # Separate GhostScraper kwargs from PlaywrightScraper kwargs
+        playwright_kwargs = {k: v for k, v in kwargs.items() 
+                            if k not in ['clear_cache', 'ttl', 'dynamodb_table', 'markdown_options']}
+        
         # Create scraper instances
-        scrapers = [cls(url=url, log_level=log_level, **kwargs) for url in urls]
+        scrapers = [cls(url=url, logging=logging, **kwargs) for url in urls]
         
         # Separate cached and non-cached scrapers
         scrapers_to_fetch = []
@@ -202,15 +220,15 @@ class GhostScraper(JSONCache):
             else:
                 cached_count += 1
         
-        if log_level in ["normal", "verbose"]:
+        if logging:
             Logger.note(f"💾 Cache status: {cached_count} cached | {len(scrapers_to_fetch)} to fetch")
         
         # Fetch and save each URL as it completes
         if scrapers_to_fetch:
-            if log_level in ["normal", "verbose"]:
+            if logging:
                 Logger.note(f"🌐 Fetching {len(scrapers_to_fetch)} URLs from web...")
             
-            async with PlaywrightScraper(log_level=log_level, **kwargs) as browser:
+            async with PlaywrightScraper(logging=logging, **playwright_kwargs) as browser:
                 semaphore = asyncio.Semaphore(max_concurrent)
                 
                 async def fetch_and_save(scraper: 'GhostScraper'):
@@ -218,16 +236,14 @@ class GhostScraper(JSONCache):
                         html, status_code = await browser.fetch_url(scraper.url)
                         scraper._html = html
                         scraper._response_code = status_code
-                        scraper.json_cache_save()  # Immediate write to disk
-                        if log_level == "verbose":
-                            Logger.note(f"💾 Saved: {scraper.url[:60]}...")
+                        scraper.json_cache_save()
                         return scraper
                 
                 await asyncio.gather(*[fetch_and_save(s) for s in scrapers_to_fetch], return_exceptions=True)
         else:
-            if log_level in ["normal", "verbose"]:
+            if logging:
                 Logger.note(f"✅ All URLs found in cache - No fetching needed")
         
-        if log_level in ["normal", "verbose"]:
+        if logging:
             Logger.note(f"✓ Batch scrape completed: {len(urls)} URLs processed\n")
         return scrapers

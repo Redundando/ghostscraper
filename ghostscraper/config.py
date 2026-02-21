@@ -8,13 +8,10 @@ You can override defaults in two ways:
 
     >>> from ghostscraper import ScraperDefaults
     >>> ScraperDefaults.MAX_CONCURRENT = 20
-    >>> ScraperDefaults.LOG_LEVEL = "verbose"
+    >>> ScraperDefaults.LOGGING = False
 """
 
 from typing import Literal
-
-# Logging levels
-LogLevel = Literal["none", "normal", "verbose"]
 
 
 class ScraperDefaults:
@@ -46,6 +43,7 @@ class ScraperDefaults:
     # Cache settings
     CACHE_TTL: int = 999  # Days
     CACHE_DIRECTORY: str = "data/ghostscraper"
+    DYNAMODB_TABLE: str | None = None  # Optional DynamoDB table for cross-machine caching
     
     # Logging
-    LOG_LEVEL: LogLevel = "normal"  # "none", "normal", or "verbose"
+    LOGGING: bool = True  # Enable/disable logging

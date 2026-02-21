@@ -2,7 +2,11 @@ import asyncio
 from ghostscraper import GhostScraper
 
 async def main():
-    scraper = GhostScraper(url="https://example.com")
+    scraper = GhostScraper(
+    url="https://example.com",
+    dynamodb_table="ghostscraper_cache",
+    clear_cache=True
+    )
     
     html = await scraper.html()
     print(f"HTML length: {len(html)} characters")

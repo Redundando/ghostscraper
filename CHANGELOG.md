@@ -2,6 +2,21 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.3.0] - 2026-02-21
+
+### Added
+- **DynamoDB L2 cache**: `dynamodb_table` parameter on `GhostScraper` and `scrape_many()` for cross-machine cache sharing
+- **`ScraperDefaults.DYNAMODB_TABLE`**: Global default for DynamoDB table name
+
+### Changed
+- **BREAKING**: Replaced `log_level: LogLevel` ("none"/"normal"/"verbose") with `logging: bool` (True/False)
+- `ScraperDefaults.LOG_LEVEL` renamed to `ScraperDefaults.LOGGING`
+
+### Migration Guide
+- Replace `log_level="none"` with `logging=False`
+- Replace `log_level="normal"` or `log_level="verbose"` with `logging=True`
+- Replace `ScraperDefaults.LOG_LEVEL` with `ScraperDefaults.LOGGING`
+
 ## [0.2.0] - 2025-02-12
 
 ### Added
