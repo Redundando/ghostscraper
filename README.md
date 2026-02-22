@@ -33,7 +33,7 @@ A Playwright-based web scraper with persistent caching, automatic browser instal
 - **DynamoDB L2 Cache**: Optional cross-machine cache sharing via AWS DynamoDB
 - **Automatic Browser Installation**: Self-installs required browsers
 - **Configurable Loading Strategies**: Override the default strategy chain per-scraper to skip slow strategies
-- **Multiple Output Formats**: HTML, Markdown, Plain Text, BeautifulSoup
+- **Multiple Output Formats**: HTML, Markdown, Plain Text, BeautifulSoup, SEO metadata
 - **Progress Callbacks**: Optional `on_progress` callback for real-time scraping events
 - **Boolean Logging**: Enable/disable logging with `logging=True/False`
 - **Error Handling**: Robust retry mechanism with exponential backoff
@@ -222,6 +222,34 @@ Returns the detected authors of the content.
 ##### `async soup() -> BeautifulSoup`
 
 Returns a BeautifulSoup object for the page.
+
+##### `async seo() -> dict`
+
+Returns a dictionary of SEO metadata parsed from the page HTML. No additional network request is made. All keys are omitted if the corresponding tag is absent.
+
+```python
+{
+    "title": str,           # <title>
+    "description": str,     # <meta name="description">
+    "canonical": str,       # <link rel="canonical">
+    "robots": {             # <meta name="robots"> — raw directives as keys, e.g. {"noindex": True}
+        "noindex": True,
+        "nofollow": True,
+    },
+    "googlebot": { ... },   # <meta name="googlebot">, same shape as robots, omitted if absent
+    "og": {                 # <meta property="og:*"> tags, keyed by suffix
+        "title": str,
+        "description": str,
+        "image": str,
+        "url": str,
+    },
+    "twitter": { ... },     # <meta name="twitter:*"> tags, same pattern
+    "hreflang": {           # <link rel="alternate" hreflang="..."> — values are lists
+        "en-us": ["https://..."],
+        "de": ["https://..."],
+    }
+}
+```
 
 ##### `@classmethod async scrape_many(urls: List[str], max_concurrent: int = 5, logging: bool = True, **kwargs) -> List[GhostScraper]`
 

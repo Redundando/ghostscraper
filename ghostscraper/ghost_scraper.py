@@ -74,6 +74,8 @@ class GhostScraper(JSONCache):
             self._soup: BeautifulSoup | None = None
         if not hasattr(self, '_markdown') or self._markdown is None:
             self._markdown: str | None = None
+        if not hasattr(self, '_seo') or self._seo is None:
+            self._seo: dict | None = None
 
     async def _emit(self, payload: dict):
         if self._on_progress is None:
@@ -197,6 +199,54 @@ class GhostScraper(JSONCache):
         if self._soup is None:
             self._soup = BeautifulSoup(await self.html(), "html.parser")
         return self._soup
+
+    async def seo(self) -> dict:
+        if self._seo is None:
+            soup = await self.soup()
+            result = {}
+
+            title = soup.find("title")
+            if title:
+                result["title"] = title.get_text()
+
+            desc = soup.find("meta", attrs={"name": "description"})
+            if desc and desc.get("content"):
+                result["description"] = desc["content"]
+
+            canonical = soup.find("link", attrs={"rel": "canonical"})
+            if canonical and canonical.get("href"):
+                result["canonical"] = canonical["href"]
+
+            for meta_name in ("robots", "googlebot"):
+                tag = soup.find("meta", attrs={"name": meta_name})
+                if tag and tag.get("content"):
+                    directives = {d.strip().lower(): True for d in tag["content"].split(",") if d.strip()}
+                    if directives:
+                        result[meta_name] = directives
+
+            og = {}
+            for tag in soup.find_all("meta", property=lambda v: v and v.startswith("og:")):
+                og[tag["property"][3:]] = tag.get("content", "")
+            if og:
+                result["og"] = og
+
+            twitter = {}
+            for tag in soup.find_all("meta", attrs={"name": lambda v: v and v.startswith("twitter:")}):
+                twitter[tag["name"][8:]] = tag.get("content", "")
+            if twitter:
+                result["twitter"] = twitter
+
+            hreflang = {}
+            for tag in soup.find_all("link", rel="alternate"):
+                lang = tag.get("hreflang")
+                href = tag.get("href")
+                if lang and href:
+                    hreflang.setdefault(lang, []).append(href)
+            if hreflang:
+                result["hreflang"] = hreflang
+
+            self._seo = result
+        return self._seo
 
     @classmethod
     async def scrape_many(cls, urls: List[str], max_concurrent: int = ScraperDefaults.MAX_CONCURRENT, 
