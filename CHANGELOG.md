@@ -2,6 +2,12 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.4.1] - 2025-05-30
+
+### Added
+- `load_strategies` parameter on `PlaywrightScraper` (and via `**kwargs` on `GhostScraper`/`scrape_many()`) to override the loading strategy chain
+- `ScraperDefaults.LOAD_STRATEGIES` global default (default: `["load", "networkidle", "domcontentloaded"]`)
+
 ## [0.3.0] - 2026-02-21
 
 ### Added

@@ -38,7 +38,8 @@ class PlaywrightScraper:
                  load_timeout: int = ScraperDefaults.LOAD_TIMEOUT,
                  wait_for_selectors: Optional[List[str]] = None,
                  logging: bool = ScraperDefaults.LOGGING,
-                 on_progress: Optional[Callable] = None
+                 on_progress: Optional[Callable] = None,
+                 load_strategies: Optional[List[str]] = None
     ):
         """Initialize a PlaywrightScraper instance.
         
@@ -54,6 +55,7 @@ class PlaywrightScraper:
             load_timeout (int): Page load timeout in milliseconds. Defaults to 20000.
             wait_for_selectors (List[str], optional): CSS selectors to wait for before considering page loaded.
             logging (bool): Enable logging. Defaults to True.
+            load_strategies (List[str], optional): Loading strategies to try in order. Defaults to ["load", "networkidle", "domcontentloaded"].
         """
         self.url = url
         self.browser_type: str = browser_type
@@ -67,6 +69,7 @@ class PlaywrightScraper:
         self.wait_for_selectors: List[str] = wait_for_selectors or []
         self.logging: bool = logging
         self._on_progress = on_progress
+        self.load_strategies: List[str] = load_strategies if load_strategies is not None else ScraperDefaults.LOAD_STRATEGIES
         self._playwright: Optional[Playwright] = None
         self._browser: Optional[Browser] = None
         self._context: Optional[BrowserContext] = None
@@ -130,61 +133,37 @@ class PlaywrightScraper:
             self._context = await self._browser.new_context(**self.context_args)
 
     async def _try_progressive_load(self, page: Page, url: str, attempt: int = 0) -> Tuple[bool, int]:
-        """Try multiple loading strategies progressively.
-        
-        Attempts 'load' -> 'networkidle' -> 'domcontentloaded' strategies.
-        
+        """Try loading strategies in order, falling back on timeout.
+
         Args:
             page (Page): Playwright page object.
             url (str): URL to load.
-            
+            attempt (int): Current retry attempt number.
+
         Returns:
             Tuple[bool, int]: (success, status_code)
         """
-        # Strategy 1: Try with 'load' first (fast and reliable for most sites)
-        try:
-            if self.logging:
-                Logger.note(f"  ⏳ Loading strategy: load (timeout: {self.load_timeout}ms)")
-            await self._emit({"event": "loading_strategy", "url": url, "strategy": "load", "attempt": attempt + 1, "max_retries": self.max_retries, "timeout": self.load_timeout})
-            response = await page.goto(url, wait_until="load", timeout=self.load_timeout)
-            status_code = response.status if response else 200
-            if self.logging:
-                Logger.note(f"  ✓ Success with load - Status: {status_code}")
-            return True, status_code
-        except PlaywrightTimeoutError:
-            if self.logging:
-                Logger.note("  ⚠ load timeout, trying 'networkidle'...")
-            pass
-
-        # Strategy 2: Fallback to networkidle (slower but more complete)
-        try:
-            if self.logging:
-                Logger.note(f"  ⏳ Loading strategy: networkidle (timeout: {self.network_idle_timeout}ms)")
-            await self._emit({"event": "loading_strategy", "url": url, "strategy": "networkidle", "attempt": attempt + 1, "max_retries": self.max_retries, "timeout": self.network_idle_timeout})
-            response = await page.goto(url, wait_until="networkidle", timeout=self.network_idle_timeout)
-            status_code = response.status if response else 200
-            if self.logging:
-                Logger.note(f"  ✓ Success with networkidle - Status: {status_code}")
-            return True, status_code
-        except PlaywrightTimeoutError:
-            if self.logging:
-                Logger.note("  ⚠ networkidle timeout, trying 'domcontentloaded'...")
-            pass
-
-        # Strategy 3: Fallback to domcontentloaded (fastest but least complete)
-        try:
-            if self.logging:
-                Logger.note("  ⏳ Loading strategy: domcontentloaded")
-            await self._emit({"event": "loading_strategy", "url": url, "strategy": "domcontentloaded", "attempt": attempt + 1, "max_retries": self.max_retries, "timeout": self.load_timeout})
-            response = await page.goto(url, wait_until="domcontentloaded", timeout=self.load_timeout)
-            status_code = response.status if response else 200
-            if self.logging:
-                Logger.note(f"  ✓ Success with domcontentloaded - Status: {status_code}")
-            return True, status_code
-        except PlaywrightTimeoutError:
-            if self.logging:
-                Logger.note("  ❌ All loading strategies failed")
-            return False, 408  # Request Timeout
+        strategies = self.load_strategies
+        for i, strategy in enumerate(strategies):
+            timeout = self.network_idle_timeout if strategy == "networkidle" else self.load_timeout
+            try:
+                if self.logging:
+                    Logger.note(f"  ⏳ Loading strategy: {strategy} (timeout: {timeout}ms)")
+                await self._emit({"event": "loading_strategy", "url": url, "strategy": strategy, "attempt": attempt + 1, "max_retries": self.max_retries, "timeout": timeout})
+                response = await page.goto(url, wait_until=strategy, timeout=timeout)
+                status_code = response.status if response else 200
+                if self.logging:
+                    Logger.note(f"  ✓ Success with {strategy} - Status: {status_code}")
+                return True, status_code
+            except PlaywrightTimeoutError:
+                next_strategy = strategies[i + 1] if i + 1 < len(strategies) else None
+                if next_strategy:
+                    if self.logging:
+                        Logger.note(f"  ⚠ {strategy} timeout, trying '{next_strategy}'...")
+                else:
+                    if self.logging:
+                        Logger.note("  ❌ All loading strategies failed")
+                    return False, 408
 
     async def _wait_for_selectors(self, page: Page) -> bool:
         """Wait for specified CSS selectors to appear on the page.

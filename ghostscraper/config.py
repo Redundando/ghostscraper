@@ -33,6 +33,9 @@ class ScraperDefaults:
     NETWORK_IDLE_TIMEOUT: int = 3000   # 3 seconds (reduced from 10s)
     LOAD_TIMEOUT: int = 20000          # 20 seconds (reduced from 30s)
     
+    # Loading strategies (tried in order)
+    LOAD_STRATEGIES: list = ["load", "networkidle", "domcontentloaded"]
+    
     # Retry settings
     MAX_RETRIES: int = 3
     BACKOFF_FACTOR: float = 2.0

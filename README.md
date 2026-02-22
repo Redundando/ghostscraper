@@ -4,7 +4,11 @@ A Playwright-based web scraper with persistent caching, automatic browser instal
 
 ## Changelog
 
-### v0.4.0 (Latest)
+### v0.4.1 (Latest)
+- Added `load_strategies` parameter to customize the loading strategy chain
+- Defaults to `["load", "networkidle", "domcontentloaded"]` but can be overridden to skip slow strategies
+
+### v0.4.0
 - Added `on_progress` callback for real-time scraping progress events
 - Supports both sync and async callbacks
 - Callbacks fire at key events: browser ready, loading strategy, retries, page loaded, errors, and batch lifecycle
@@ -28,6 +32,7 @@ A Playwright-based web scraper with persistent caching, automatic browser instal
 - **Persistent Caching**: Stores scraped data between runs for improved performance
 - **DynamoDB L2 Cache**: Optional cross-machine cache sharing via AWS DynamoDB
 - **Automatic Browser Installation**: Self-installs required browsers
+- **Configurable Loading Strategies**: Override the default strategy chain per-scraper to skip slow strategies
 - **Multiple Output Formats**: HTML, Markdown, Plain Text, BeautifulSoup
 - **Progress Callbacks**: Optional `on_progress` callback for real-time scraping events
 - **Boolean Logging**: Enable/disable logging with `logging=True/False`
@@ -186,6 +191,7 @@ GhostScraper(
 - `network_idle_timeout` (int): Milliseconds to wait for network to be idle. Default: 10000 (10 seconds).
 - `load_timeout` (int): Milliseconds to wait for page to load. Default: 30000 (30 seconds).
 - `wait_for_selectors` (List[str]): CSS selectors to wait for before considering page loaded.
+- `load_strategies` (List[str]): Loading strategies to try in order. Default: `["load", "networkidle", "domcontentloaded"]`.
 
 #### Methods
 
@@ -248,7 +254,8 @@ PlaywrightScraper(
     network_idle_timeout: int = 10000,
     load_timeout: int = 30000,
     wait_for_selectors: Optional[List[str]] = None,
-    logging: bool = True
+    logging: bool = True,
+    load_strategies: Optional[List[str]] = None
 )
 ```
 
@@ -314,13 +321,27 @@ Each event is a dict with an `event` key and a `ts` Unix timestamp. Additional f
 
 ### Loading Strategies
 
-GhostScraper tries three Playwright loading strategies in order, falling back if the previous times out:
+By default, GhostScraper tries three Playwright loading strategies in order, falling back if the previous times out:
 
 - `load` — waits for the `load` event (default, works for most sites)
 - `networkidle` — waits until no network activity for 500ms (better for JS-heavy pages)
 - `domcontentloaded` — waits only for HTML parsing (fastest fallback, least complete)
 
-If a URL triggers multiple `loading_strategy` events, it means earlier strategies timed out and fell back. If all three fail, the attempt is retried up to `max_retries` times with exponential backoff.
+If a URL triggers multiple `loading_strategy` events, it means earlier strategies timed out and fell back. If all strategies fail, the attempt is retried up to `max_retries` times with exponential backoff.
+
+Use `load_strategies` to override the chain. This is useful when you know a site will always time out on certain strategies:
+
+```python
+# Skip straight to domcontentloaded
+scrapers = await GhostScraper.scrape_many(
+    urls=urls,
+    load_strategies=["domcontentloaded"]
+)
+
+# Or set a global default
+from ghostscraper import ScraperDefaults
+ScraperDefaults.LOAD_STRATEGIES = ["domcontentloaded"]
+```
 
 ## Advanced Usage
 
