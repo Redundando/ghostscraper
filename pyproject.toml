@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "ghostscraper"
-version = "0.4.2"
+version = "0.4.3"
 description = "A Playwright-based web scraper with persistent caching, parallel scraping, progress callbacks, and multiple output formats"
 readme = "README.md"
 authors = [
