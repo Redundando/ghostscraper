@@ -3,14 +3,16 @@
 Provides functions to check if browsers are installed and install them if needed.
 """
 
+import asyncio
 import subprocess
 import sys
 import os
+from typing import Callable, Optional
 from playwright.async_api import async_playwright, Browser, BrowserContext
 from logorator import Logger
 
 
-async def check_browser_installed(browser_name: str) -> bool:
+async def check_browser_installed(browser_name: str, logging: bool = True, on_progress: Optional[Callable] = None) -> bool:
     """Check if a Playwright browser is installed and working.
     
     Args:
@@ -22,20 +24,30 @@ async def check_browser_installed(browser_name: str) -> bool:
     async with async_playwright() as p:
         browsers = {"chromium": p.chromium, "firefox": p.firefox, "webkit": p.webkit, }
         if browser_name not in browsers:
-            Logger.note(f"❌ Invalid browser name: {browser_name}")
+            if logging:
+                Logger.note(f"❌ Invalid browser name: {browser_name}")
             return False
 
         try:
             browser = await browsers[browser_name].launch()
             await browser.close()
-            Logger.note(f"✅ {browser_name} is installed and working!")
+            if logging:
+                Logger.note(f"✅ {browser_name} is installed and working!")
+            if on_progress:
+                try:
+                    result = on_progress({"event": "browser_ready", "browser": browser_name})
+                    if asyncio.iscoroutine(result):
+                        await result
+                except Exception:
+                    pass
             return True
         except Exception as e:
-            Logger.note(f"❌ {browser_name} is NOT installed or failed to launch: {e}")
+            if logging:
+                Logger.note(f"❌ {browser_name} is NOT installed or failed to launch: {e}")
             return False
 
 @Logger()
-def install_browser(browser_type: str) -> bool:
+def install_browser(browser_type: str, on_progress: Optional[Callable] = None) -> bool:
     """Install a Playwright browser.
     
     Args:
@@ -47,6 +59,11 @@ def install_browser(browser_type: str) -> bool:
     try:
         Logger.note(f"\n[Ghostscraper] Installing {browser_type} browser (first-time setup)")
         Logger.note("[Ghostscraper] This may take a few minutes...")
+        if on_progress:
+            try:
+                on_progress({"event": "browser_installing", "browser": browser_type})
+            except Exception:
+                pass
 
         subprocess.check_call([
                 sys.executable, "-m", "playwright", "install", browser_type

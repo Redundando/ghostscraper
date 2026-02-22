@@ -5,7 +5,7 @@ web scraping with persistent JSON caching for efficient data retrieval.
 """
 
 from logorator import Logger
-from typing import Any, Dict, List, Optional
+from typing import Any, Callable, Dict, List, Optional
 
 from bs4 import BeautifulSoup
 from cacherator import Cached, JSONCache
@@ -16,6 +16,7 @@ from .config import ScraperDefaults
 import html2text
 import newspaper
 import asyncio
+import time
 
 class GhostScraper(JSONCache):
     """A web scraper with persistent caching and multiple output formats.
@@ -35,7 +36,8 @@ class GhostScraper(JSONCache):
     
     def __init__(self, url="", clear_cache=False, ttl=ScraperDefaults.CACHE_TTL, 
                  markdown_options: Optional[Dict[str, Any]] = None, logging: bool = ScraperDefaults.LOGGING, 
-                 dynamodb_table: Optional[str] = ScraperDefaults.DYNAMODB_TABLE, **kwargs):
+                 dynamodb_table: Optional[str] = ScraperDefaults.DYNAMODB_TABLE,
+                 on_progress: Optional[Callable] = None, **kwargs):
         """Initialize a GhostScraper instance.
         
         Args:
@@ -51,6 +53,7 @@ class GhostScraper(JSONCache):
         self.kwargs = kwargs
         self.logging = logging
         self._markdown_options = markdown_options or {}
+        self._on_progress = on_progress
         
         JSONCache.__init__(self, data_id=f"{slugify(self.url)}", directory=ScraperDefaults.CACHE_DIRECTORY, 
                           clear_cache=clear_cache, ttl=ttl, logging=logging, 
@@ -72,6 +75,18 @@ class GhostScraper(JSONCache):
         if not hasattr(self, '_markdown') or self._markdown is None:
             self._markdown: str | None = None
 
+    async def _emit(self, payload: dict):
+        if self._on_progress is None:
+            return
+        try:
+            payload["ts"] = time.time()
+            if asyncio.iscoroutinefunction(self._on_progress):
+                await self._on_progress(payload)
+            else:
+                self._on_progress(payload)
+        except Exception:
+            pass
+
     def __str__(self):
         return f"{self.url}"
 
@@ -82,11 +97,12 @@ class GhostScraper(JSONCache):
     @Cached()
     def _playwright_scraper(self):
         """Lazy-loaded Playwright scraper instance."""
-        return PlaywrightScraper(url=self.url, **self.kwargs)
+        return PlaywrightScraper(url=self.url, logging=self.logging, on_progress=self._on_progress, **self.kwargs)
 
-    @Logger(override_function_name="Fetching URL via Playwright")
     async def _fetch_response(self):
         """Internal method to fetch response from Playwright scraper."""
+        if self.logging:
+            Logger.note(f"Fetching URL via Playwright: {self.url}")
         return await self._playwright_scraper.fetch_and_close()
 
     async def get_response(self):
@@ -98,8 +114,14 @@ class GhostScraper(JSONCache):
         if self._response_code is None or self._html is None:
             if self.logging:
                 Logger.note(f"📥 Cache miss: {self.url[:60]}... - Fetching from web")
-            (self._html, self._response_code) = await self._fetch_response()
+            await self._emit({"event": "started", "url": self.url})
+            try:
+                (self._html, self._response_code) = await self._fetch_response()
+            except Exception as e:
+                await self._emit({"event": "error", "url": self.url, "message": str(e)})
+                raise
             self.json_cache_save()
+            await self._emit({"event": "page_loaded", "url": self.url, "completed": 1, "total": 1, "status_code": self._response_code})
         return {"html": self._html, "response_code": self._response_code}
 
     async def html(self) -> str:
@@ -204,12 +226,14 @@ class GhostScraper(JSONCache):
         if logging:
             Logger.note(f"\n🚀 Starting batch scrape: {len(urls)} URLs | Concurrency: {max_concurrent}")
         
+        on_progress = kwargs.pop("on_progress", None)
+
         # Separate GhostScraper kwargs from PlaywrightScraper kwargs
         playwright_kwargs = {k: v for k, v in kwargs.items() 
                             if k not in ['clear_cache', 'ttl', 'dynamodb_table', 'markdown_options']}
         
         # Create scraper instances
-        scrapers = [cls(url=url, logging=logging, **kwargs) for url in urls]
+        scrapers = [cls(url=url, logging=logging, on_progress=on_progress, **kwargs) for url in urls]
         
         # Separate cached and non-cached scrapers
         scrapers_to_fetch = []
@@ -222,21 +246,35 @@ class GhostScraper(JSONCache):
         
         if logging:
             Logger.note(f"💾 Cache status: {cached_count} cached | {len(scrapers_to_fetch)} to fetch")
+
+        if on_progress:
+            await scrapers[0]._emit({"event": "batch_started", "total": len(urls), "to_fetch": len(scrapers_to_fetch), "cached": cached_count})
         
         # Fetch and save each URL as it completes
         if scrapers_to_fetch:
             if logging:
                 Logger.note(f"🌐 Fetching {len(scrapers_to_fetch)} URLs from web...")
             
-            async with PlaywrightScraper(logging=logging, **playwright_kwargs) as browser:
+            total = len(scrapers_to_fetch)
+            completed = 0
+
+            async with PlaywrightScraper(logging=logging, on_progress=on_progress, **playwright_kwargs) as browser:
                 semaphore = asyncio.Semaphore(max_concurrent)
                 
                 async def fetch_and_save(scraper: 'GhostScraper'):
+                    nonlocal completed
+                    await scraper._emit({"event": "started", "url": scraper.url})
                     async with semaphore:
-                        html, status_code = await browser.fetch_url(scraper.url)
+                        try:
+                            html, status_code = await browser.fetch_url(scraper.url)
+                        except Exception as e:
+                            await scraper._emit({"event": "error", "url": scraper.url, "message": str(e)})
+                            raise
                         scraper._html = html
                         scraper._response_code = status_code
                         scraper.json_cache_save()
+                        completed += 1
+                        await scraper._emit({"event": "page_loaded", "url": scraper.url, "completed": completed, "total": total, "status_code": status_code})
                         return scraper
                 
                 await asyncio.gather(*[fetch_and_save(s) for s in scrapers_to_fetch], return_exceptions=True)
@@ -246,4 +284,8 @@ class GhostScraper(JSONCache):
         
         if logging:
             Logger.note(f"✓ Batch scrape completed: {len(urls)} URLs processed\n")
+
+        if on_progress:
+            await scrapers[0]._emit({"event": "batch_done", "total": len(urls)})
+
         return scrapers

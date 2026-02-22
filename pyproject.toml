@@ -5,7 +5,7 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "ghostscraper"
 version = "0.3.0"
-description = "A Playwright-based web scraper with persistent caching, parallel scraping, and multiple output formats"
+description = "A Playwright-based web scraper with persistent caching, parallel scraping, progress callbacks, and multiple output formats"
 readme = "README.md"
 authors = [
     {name = "Arved Klöhn", email = "arved.kloehn@gmail.com"},
@@ -25,7 +25,7 @@ classifiers = [
     "Topic :: Software Development :: Libraries :: Python Modules",
     "Typing :: Typed",
 ]
-keywords = ["scraping", "web-scraping", "playwright", "async", "caching", "parallel"]
+keywords = ["scraping", "web-scraping", "playwright", "async", "caching", "parallel", "progress", "callbacks"]
 requires-python = ">=3.8"
 dependencies = [
     "beautifulsoup4",

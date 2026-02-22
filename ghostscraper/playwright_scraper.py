@@ -5,7 +5,8 @@ automatic browser installation, retry mechanisms, and multiple loading strategie
 """
 
 import asyncio
-from typing import Any, Dict, List, Literal, Optional, Tuple
+import time
+from typing import Any, Callable, Dict, List, Literal, Optional, Tuple
 
 from logorator import Logger
 from playwright.async_api import async_playwright, Browser, BrowserContext, Page, Playwright, TimeoutError as PlaywrightTimeoutError
@@ -36,7 +37,8 @@ class PlaywrightScraper:
                  network_idle_timeout: int = ScraperDefaults.NETWORK_IDLE_TIMEOUT,
                  load_timeout: int = ScraperDefaults.LOAD_TIMEOUT,
                  wait_for_selectors: Optional[List[str]] = None,
-                 logging: bool = ScraperDefaults.LOGGING
+                 logging: bool = ScraperDefaults.LOGGING,
+                 on_progress: Optional[Callable] = None
     ):
         """Initialize a PlaywrightScraper instance.
         
@@ -64,10 +66,23 @@ class PlaywrightScraper:
         self.load_timeout: int = load_timeout
         self.wait_for_selectors: List[str] = wait_for_selectors or []
         self.logging: bool = logging
+        self._on_progress = on_progress
         self._playwright: Optional[Playwright] = None
         self._browser: Optional[Browser] = None
         self._context: Optional[BrowserContext] = None
         self.last_status_code: int = 200
+
+    async def _emit(self, payload: dict):
+        if self._on_progress is None:
+            return
+        try:
+            payload["ts"] = time.time()
+            if asyncio.iscoroutinefunction(self._on_progress):
+                await self._on_progress(payload)
+            else:
+                self._on_progress(payload)
+        except Exception:
+            pass
 
     def __str__(self):
         return self.url
@@ -83,12 +98,12 @@ class PlaywrightScraper:
         """
         if PlaywrightScraper.BROWSERS_CHECKED.get(self.browser_type) is not None:
             return PlaywrightScraper.BROWSERS_CHECKED.get(self.browser_type)
-        if await check_browser_installed(self.browser_type):
+        if await check_browser_installed(self.browser_type, logging=self.logging, on_progress=self._on_progress):
             PlaywrightScraper.BROWSERS_CHECKED[self.browser_type] = True
             return True
         else:
-            install_browser(self.browser_type)
-            PlaywrightScraper.BROWSERS_CHECKED[self.browser_type] = await check_browser_installed(self.browser_type)
+            install_browser(self.browser_type, on_progress=self._on_progress)
+            PlaywrightScraper.BROWSERS_CHECKED[self.browser_type] = await check_browser_installed(self.browser_type, logging=self.logging, on_progress=self._on_progress)
             return PlaywrightScraper.BROWSERS_CHECKED[self.browser_type]
 
     async def _ensure_browser(self) -> None:
@@ -114,7 +129,7 @@ class PlaywrightScraper:
 
             self._context = await self._browser.new_context(**self.context_args)
 
-    async def _try_progressive_load(self, page: Page, url: str) -> Tuple[bool, int]:
+    async def _try_progressive_load(self, page: Page, url: str, attempt: int = 0) -> Tuple[bool, int]:
         """Try multiple loading strategies progressively.
         
         Attempts 'load' -> 'networkidle' -> 'domcontentloaded' strategies.
@@ -130,6 +145,7 @@ class PlaywrightScraper:
         try:
             if self.logging:
                 Logger.note(f"  ⏳ Loading strategy: load (timeout: {self.load_timeout}ms)")
+            await self._emit({"event": "loading_strategy", "url": url, "strategy": "load", "attempt": attempt + 1, "max_retries": self.max_retries, "timeout": self.load_timeout})
             response = await page.goto(url, wait_until="load", timeout=self.load_timeout)
             status_code = response.status if response else 200
             if self.logging:
@@ -144,6 +160,7 @@ class PlaywrightScraper:
         try:
             if self.logging:
                 Logger.note(f"  ⏳ Loading strategy: networkidle (timeout: {self.network_idle_timeout}ms)")
+            await self._emit({"event": "loading_strategy", "url": url, "strategy": "networkidle", "attempt": attempt + 1, "max_retries": self.max_retries, "timeout": self.network_idle_timeout})
             response = await page.goto(url, wait_until="networkidle", timeout=self.network_idle_timeout)
             status_code = response.status if response else 200
             if self.logging:
@@ -158,6 +175,7 @@ class PlaywrightScraper:
         try:
             if self.logging:
                 Logger.note("  ⏳ Loading strategy: domcontentloaded")
+            await self._emit({"event": "loading_strategy", "url": url, "strategy": "domcontentloaded", "attempt": attempt + 1, "max_retries": self.max_retries, "timeout": self.load_timeout})
             response = await page.goto(url, wait_until="domcontentloaded", timeout=self.load_timeout)
             status_code = response.status if response else 200
             if self.logging:
@@ -207,11 +225,11 @@ class PlaywrightScraper:
         await self._ensure_browser()
         attempts = 0
 
-        while attempts <= self.max_retries:
+        while attempts < self.max_retries:
             page: Page = await self._context.new_page()
             try:
                 page.set_default_navigation_timeout(self.load_timeout)
-                load_success, status_code = await self._try_progressive_load(page, url)
+                load_success, status_code = await self._try_progressive_load(page, url, attempt=attempts)
 
                 if not load_success:
                     if attempts == self.max_retries:
@@ -221,6 +239,8 @@ class PlaywrightScraper:
                     wait_time = self.backoff_factor ** attempts
                     if self.logging:
                         Logger.note(f"  ⏳ Retry {attempts + 1}/{self.max_retries} in {wait_time:.1f}s")
+                    if attempts < self.max_retries - 1:
+                        await self._emit({"event": "retry", "url": url, "attempt": attempts + 1, "max_retries": self.max_retries})
                     await asyncio.sleep(wait_time)
                     attempts += 1
                     continue
@@ -234,6 +254,8 @@ class PlaywrightScraper:
                     wait_time = self.backoff_factor ** attempts
                     if self.logging:
                         Logger.note(f"  ⚠ Status {status_code} - Retry {attempts + 1}/{self.max_retries} in {wait_time:.1f}s")
+                    if attempts < self.max_retries - 1:
+                        await self._emit({"event": "retry", "url": url, "attempt": attempts + 1, "max_retries": self.max_retries, "status_code": status_code})
                     await asyncio.sleep(wait_time)
                     attempts += 1
                     continue
@@ -251,6 +273,8 @@ class PlaywrightScraper:
                 wait_time = self.backoff_factor ** attempts
                 if self.logging:
                     Logger.note(f"  ⏳ Timeout - Retry {attempts + 1}/{self.max_retries} in {wait_time:.1f}s")
+                if attempts < self.max_retries - 1:
+                    await self._emit({"event": "retry", "url": url, "attempt": attempts + 1, "max_retries": self.max_retries, "reason": "timeout"})
                 await asyncio.sleep(wait_time)
                 attempts += 1
 
@@ -263,6 +287,8 @@ class PlaywrightScraper:
                 wait_time = self.backoff_factor ** attempts
                 if self.logging:
                     Logger.note(f"  ⚠ Error: {str(e)[:50]}... - Retry {attempts + 1}/{self.max_retries} in {wait_time:.1f}s")
+                if attempts < self.max_retries - 1:
+                    await self._emit({"event": "retry", "url": url, "attempt": attempts + 1, "max_retries": self.max_retries, "reason": str(e).splitlines()[0]})
                 await asyncio.sleep(wait_time)
                 attempts += 1
 

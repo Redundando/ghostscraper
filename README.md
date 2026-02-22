@@ -4,7 +4,12 @@ A Playwright-based web scraper with persistent caching, automatic browser instal
 
 ## Changelog
 
-### v0.3.0 (Latest)
+### v0.4.0 (Latest)
+- Added `on_progress` callback for real-time scraping progress events
+- Supports both sync and async callbacks
+- Callbacks fire at key events: browser ready, loading strategy, retries, page loaded, errors, and batch lifecycle
+
+### v0.3.0
 - Added DynamoDB L2 cache support for cross-machine cache sharing
 - Simplified logging to boolean (`logging=True/False`)
 - Added `dynamodb_table` parameter to `GhostScraper` and `scrape_many()`
@@ -24,6 +29,7 @@ A Playwright-based web scraper with persistent caching, automatic browser instal
 - **DynamoDB L2 Cache**: Optional cross-machine cache sharing via AWS DynamoDB
 - **Automatic Browser Installation**: Self-installs required browsers
 - **Multiple Output Formats**: HTML, Markdown, Plain Text, BeautifulSoup
+- **Progress Callbacks**: Optional `on_progress` callback for real-time scraping events
 - **Boolean Logging**: Enable/disable logging with `logging=True/False`
 - **Error Handling**: Robust retry mechanism with exponential backoff
 - **Asynchronous API**: Modern async/await interface
@@ -155,6 +161,7 @@ GhostScraper(
     markdown_options: Optional[Dict[str, Any]] = None,
     logging: bool = True,
     dynamodb_table: Optional[str] = None,
+    on_progress: Optional[Callable] = None,
     **kwargs
 )
 ```
@@ -166,6 +173,7 @@ GhostScraper(
 - `markdown_options` (Dict[str, Any]): Options for HTML to Markdown conversion.
 - `logging` (bool): Enable/disable logging. Default: True.
 - `dynamodb_table` (str): DynamoDB table name for cross-machine caching. Default: None.
+- `on_progress` (Callable, optional): Callback fired at key scraping events. Accepts both sync and async callables. Default: None.
 - `**kwargs`: Additional options passed to PlaywrightScraper.
 
 **Playwright Options (passed via kwargs)**:
@@ -217,6 +225,7 @@ Scrape multiple URLs in parallel using a shared browser instance.
 - `urls` (List[str]): List of URLs to scrape.
 - `max_concurrent` (int): Maximum number of concurrent page loads. Default: 5.
 - `logging` (bool): Enable/disable logging. Default: True.
+- `on_progress` (Callable, optional): Callback fired at key scraping events. Default: None.
 - `**kwargs`: Additional options passed to GhostScraper and PlaywrightScraper.
 
 **Returns**: List of GhostScraper instances with cached results.
@@ -270,6 +279,48 @@ Closes the browser and playwright resources.
 ##### `async check_and_install_browser() -> bool`
 
 Checks if the required browser is installed, and installs it if not. Returns True if successful.
+
+## Progress Callbacks
+
+Pass an `on_progress` callable to receive real-time events during scraping. Both sync and async callables are supported.
+
+```python
+# Sync callback
+scraper = GhostScraper(url="https://example.com", on_progress=lambda e: print(e["event"]))
+
+# Async callback
+async def on_progress(event):
+    await queue.put(event)
+
+scraper = GhostScraper(url="https://example.com", on_progress=on_progress)
+
+# Batch scraping
+scrapers = await GhostScraper.scrape_many(urls=urls, on_progress=on_progress)
+```
+
+Each event is a dict with an `event` key and a `ts` Unix timestamp. Additional fields depend on the event type:
+
+| event | fields | notes |
+|---|---|---|
+| `started` | `url` | fired before fetch begins |
+| `browser_installing` | `browser` | first-run only; sync callback only |
+| `browser_ready` | `browser` | browser check passed |
+| `loading_strategy` | `url`, `strategy`, `attempt`, `max_retries`, `timeout` | see loading strategies below |
+| `retry` | `url`, `attempt`, `max_retries` + optional `reason`, `status_code` | only fires when another attempt follows |
+| `page_loaded` | `url`, `completed`, `total`, `status_code` | fires on success or error status |
+| `error` | `url`, `message` | unhandled exception during fetch |
+| `batch_started` | `total`, `to_fetch`, `cached` | `scrape_many` only |
+| `batch_done` | `total` | `scrape_many` only |
+
+### Loading Strategies
+
+GhostScraper tries three Playwright loading strategies in order, falling back if the previous times out:
+
+- `load` — waits for the `load` event (default, works for most sites)
+- `networkidle` — waits until no network activity for 500ms (better for JS-heavy pages)
+- `domcontentloaded` — waits only for HTML parsing (fastest fallback, least complete)
+
+If a URL triggers multiple `loading_strategy` events, it means earlier strategies timed out and fell back. If all three fail, the attempt is retried up to `max_retries` times with exponential backoff.
 
 ## Advanced Usage
 
@@ -394,11 +445,11 @@ asyncio.run(setup_browsers())
 ## Error Handling
 
 GhostScraper uses a progressive loading strategy:
-1. First attempts with "networkidle" (most reliable)
-2. Falls back to "load" event if timeout occurs
-3. Finally tries "domcontentloaded" (fastest but least complete)
+1. First attempts with `load` (fast, works for most sites)
+2. Falls back to `networkidle` if timeout occurs (better for JS-heavy pages)
+3. Finally tries `domcontentloaded` (fastest but least complete)
 
-If all strategies fail, it will retry up to `max_retries` with exponential backoff.
+If all strategies fail, it will retry up to `max_retries` times with exponential backoff.
 
 ## License
 
