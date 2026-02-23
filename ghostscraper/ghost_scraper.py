@@ -55,27 +55,22 @@ class GhostScraper(JSONCache):
         self._markdown_options = markdown_options or {}
         self._on_progress = on_progress
         
-        JSONCache.__init__(self, data_id=f"{slugify(self.url)}", directory=ScraperDefaults.CACHE_DIRECTORY, 
-                          clear_cache=clear_cache, ttl=ttl, logging=logging, 
-                          dynamodb_table=dynamodb_table, save_on_del=False)
-        
-        # Initialize after JSONCache to allow cache loading
-        if not hasattr(self, '_html') or self._html is None:
-            self._html: str | None = None
-        if not hasattr(self, '_response_code') or self._response_code is None:
-            self._response_code: int | None = None
-        if not hasattr(self, '_text') or self._text is None:
-            self._text: str | None = None
-        if not hasattr(self, '_authors') or self._authors is None:
-            self._authors: str | None = None
-        if not hasattr(self, '_article') or self._article is None:
-            self._article: newspaper.Article | None = None
-        if not hasattr(self, '_soup') or self._soup is None:
-            self._soup: BeautifulSoup | None = None
-        if not hasattr(self, '_markdown') or self._markdown is None:
-            self._markdown: str | None = None
-        if not hasattr(self, '_seo') or self._seo is None:
-            self._seo: dict | None = None
+        JSONCache.__init__(self, data_id=f"{slugify(self.url)}", directory=ScraperDefaults.CACHE_DIRECTORY,
+                          clear_cache=clear_cache, ttl=ttl, logging=logging,
+                          dynamodb_table=dynamodb_table)
+
+        # Persisted fields (restored from cache by JSONCache if available)
+        for attr in ("_html", "_response_code"):
+            if not hasattr(self, attr):
+                setattr(self, attr, None)
+
+        # In-memory derived fields (always start as None)
+        self._article: newspaper.Article | None = None
+        self._soup: BeautifulSoup | None = None
+        self._markdown: str | None = None
+        self._text: str | None = None
+        self._authors: str | None = None
+        self._seo: dict | None = None
 
     async def _emit(self, payload: dict):
         if self._on_progress is None:
@@ -286,13 +281,8 @@ class GhostScraper(JSONCache):
         scrapers = [cls(url=url, logging=logging, on_progress=on_progress, **kwargs) for url in urls]
         
         # Separate cached and non-cached scrapers
-        scrapers_to_fetch = []
-        cached_count = 0
-        for scraper in scrapers:
-            if scraper._html is None or scraper._response_code is None:
-                scrapers_to_fetch.append(scraper)
-            else:
-                cached_count += 1
+        scrapers_to_fetch = [s for s in scrapers if s._html is None]
+        cached_count = len(scrapers) - len(scrapers_to_fetch)
         
         if logging:
             Logger.note(f"💾 Cache status: {cached_count} cached | {len(scrapers_to_fetch)} to fetch")

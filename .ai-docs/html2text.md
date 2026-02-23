@@ -2,7 +2,7 @@
 Package: html2text
 Version: 2025.4.15
 Source: https://pypi.org/project/html2text/
-Fetched: 2026-02-21 16:58:45
+Fetched: 2026-02-23 21:34:56
 ---
 
 # html2text

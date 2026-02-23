@@ -2,7 +2,7 @@
 Package: newspaper4k
 Version: 0.9.4.1
 Source: https://pypi.org/project/newspaper4k/
-Fetched: 2026-02-21 16:58:45
+Fetched: 2026-02-23 21:34:56
 ---
 
 # Newspaper4k: Article Scraping & Curation, a continuation of the beloved newspaper3k by codelucas

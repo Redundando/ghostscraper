@@ -2,7 +2,7 @@
 Package: lxml_html_clean
 Version: 0.4.3
 Source: https://pypi.org/project/lxml_html_clean/
-Fetched: 2026-02-21 16:58:45
+Fetched: 2026-02-23 21:34:56
 ---
 
 # lxml_html_clean

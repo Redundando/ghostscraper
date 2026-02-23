@@ -4,7 +4,10 @@ A Playwright-based web scraper with persistent caching, automatic browser instal
 
 ## Changelog
 
-### v0.4.1 (Latest)
+### v0.5.0 (Latest)
+- Simplified caching to single-backend model: local JSON by default, DynamoDB when `dynamodb_table` is set (never both simultaneously)
+
+### v0.4.1
 - Added `load_strategies` parameter to customize the loading strategy chain
 - Defaults to `["load", "networkidle", "domcontentloaded"]` but can be overridden to skip slow strategies
 
@@ -14,7 +17,7 @@ A Playwright-based web scraper with persistent caching, automatic browser instal
 - Callbacks fire at key events: browser ready, loading strategy, retries, page loaded, errors, and batch lifecycle
 
 ### v0.3.0
-- Added DynamoDB L2 cache support for cross-machine cache sharing
+- Added DynamoDB cache support for cross-machine cache sharing
 - Simplified logging to boolean (`logging=True/False`)
 - Added `dynamodb_table` parameter to `GhostScraper` and `scrape_many()`
 
@@ -30,7 +33,7 @@ A Playwright-based web scraper with persistent caching, automatic browser instal
 - **Headless Browser Scraping**: Uses Playwright for reliable scraping of JavaScript-heavy websites
 - **Parallel Scraping**: Scrape multiple URLs concurrently with shared browser instances
 - **Persistent Caching**: Stores scraped data between runs for improved performance
-- **DynamoDB L2 Cache**: Optional cross-machine cache sharing via AWS DynamoDB
+- **DynamoDB Cache**: Optional cross-machine cache sharing via AWS DynamoDB (replaces local cache when set)
 - **Automatic Browser Installation**: Self-installs required browsers
 - **Configurable Loading Strategies**: Override the default strategy chain per-scraper to skip slow strategies
 - **Multiple Output Formats**: HTML, Markdown, Plain Text, BeautifulSoup, SEO metadata
@@ -134,7 +137,7 @@ import asyncio
 from ghostscraper import GhostScraper
 
 async def main():
-    # Single scraper with DynamoDB L2 cache
+    # Single scraper with DynamoDB cache (replaces local cache)
     scraper = GhostScraper(
         url="https://example.com",
         dynamodb_table="my-cache-table"  # Requires AWS credentials

@@ -2,7 +2,7 @@
 Package: python-slugify
 Version: 8.0.4
 Source: https://pypi.org/project/python-slugify/
-Fetched: 2026-02-21 16:58:45
+Fetched: 2026-02-23 21:34:56
 ---
 
 # Python Slugify
