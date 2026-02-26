@@ -39,7 +39,8 @@ class PlaywrightScraper:
                  wait_for_selectors: Optional[List[str]] = None,
                  logging: bool = ScraperDefaults.LOGGING,
                  on_progress: Optional[Callable] = None,
-                 load_strategies: Optional[List[str]] = None
+                 load_strategies: Optional[List[str]] = None,
+                 no_retry_on: Optional[List[int]] = None
     ):
         """Initialize a PlaywrightScraper instance.
         
@@ -56,6 +57,7 @@ class PlaywrightScraper:
             wait_for_selectors (List[str], optional): CSS selectors to wait for before considering page loaded.
             logging (bool): Enable logging. Defaults to True.
             load_strategies (List[str], optional): Loading strategies to try in order. Defaults to ["load", "networkidle", "domcontentloaded"].
+            no_retry_on (List[int], optional): Status codes that skip retries immediately. Defaults to None.
         """
         self.url = url
         self.browser_type: str = browser_type
@@ -70,6 +72,7 @@ class PlaywrightScraper:
         self.logging: bool = logging
         self._on_progress = on_progress
         self.load_strategies: List[str] = load_strategies if load_strategies is not None else ScraperDefaults.LOAD_STRATEGIES
+        self.no_retry_on: List[int] = no_retry_on or []
         self._playwright: Optional[Playwright] = None
         self._browser: Optional[Browser] = None
         self._context: Optional[BrowserContext] = None
@@ -132,30 +135,33 @@ class PlaywrightScraper:
 
             self._context = await self._browser.new_context(**self.context_args)
 
-    async def _try_progressive_load(self, page: Page, url: str, attempt: int = 0) -> Tuple[bool, int]:
+    async def _try_progressive_load(self, page: Page, url: str, attempt: int = 0) -> Tuple[bool, int, dict, list]:
         """Try loading strategies in order, falling back on timeout.
 
-        Args:
-            page (Page): Playwright page object.
-            url (str): URL to load.
-            attempt (int): Current retry attempt number.
-
         Returns:
-            Tuple[bool, int]: (success, status_code)
+            Tuple[bool, int, dict, list]: (success, status_code, headers, redirect_chain)
         """
         strategies = self.load_strategies
         for i, strategy in enumerate(strategies):
             timeout = self.network_idle_timeout if strategy == "networkidle" else self.load_timeout
+            redirect_chain = []
+
+            def on_response(response):
+                redirect_chain.append({"url": response.url, "status": response.status})
+
+            page.on("response", on_response)
             try:
                 if self.logging:
                     Logger.note(f"  ⏳ Loading strategy: {strategy} (timeout: {timeout}ms)")
                 await self._emit({"event": "loading_strategy", "url": url, "strategy": strategy, "attempt": attempt + 1, "max_retries": self.max_retries, "timeout": timeout})
                 response = await page.goto(url, wait_until=strategy, timeout=timeout)
                 status_code = response.status if response else 200
+                headers = dict(response.headers) if response else {}
                 if self.logging:
                     Logger.note(f"  ✓ Success with {strategy} - Status: {status_code}")
-                return True, status_code
+                return True, status_code, headers, redirect_chain
             except PlaywrightTimeoutError:
+                page.remove_listener("response", on_response)
                 next_strategy = strategies[i + 1] if i + 1 < len(strategies) else None
                 if next_strategy:
                     if self.logging:
@@ -163,7 +169,7 @@ class PlaywrightScraper:
                 else:
                     if self.logging:
                         Logger.note("  ❌ All loading strategies failed")
-                    return False, 408
+                    return False, 408, {}, []
 
     async def _wait_for_selectors(self, page: Page) -> bool:
         """Wait for specified CSS selectors to appear on the page.
@@ -190,14 +196,11 @@ class PlaywrightScraper:
             Logger.note(f"GhostScraper: Error waiting for selectors: {str(e)}")
             return False
 
-    async def fetch_url(self, url: str) -> Tuple[str, int]:
+    async def fetch_url(self, url: str) -> Tuple[str, int, dict, list]:
         """Fetch a specific URL using the shared browser instance.
-        
-        Args:
-            url (str): The URL to fetch.
-            
+
         Returns:
-            Tuple[str, int]: (html_content, status_code)
+            Tuple[str, int, dict, list]: (html_content, status_code, headers, redirect_chain)
         """
         if self.logging:
             Logger.note(f"🌐 Fetching: {url[:80]}...")
@@ -208,13 +211,13 @@ class PlaywrightScraper:
             page: Page = await self._context.new_page()
             try:
                 page.set_default_navigation_timeout(self.load_timeout)
-                load_success, status_code = await self._try_progressive_load(page, url, attempt=attempts)
+                load_success, status_code, headers, redirect_chain = await self._try_progressive_load(page, url, attempt=attempts)
 
                 if not load_success:
                     if attempts == self.max_retries:
                         if self.logging:
                             Logger.note(f"  ❌ Max retries reached - All strategies failed")
-                        return "", 408
+                        return "", 408, {}, []
                     wait_time = self.backoff_factor ** attempts
                     if self.logging:
                         Logger.note(f"  ⏳ Retry {attempts + 1}/{self.max_retries} in {wait_time:.1f}s")
@@ -225,10 +228,15 @@ class PlaywrightScraper:
                     continue
 
                 if status_code >= 400:
+                    if self.no_retry_on and status_code in self.no_retry_on:
+                        if self.logging:
+                            Logger.note(f"  ❌ Status {status_code} - no retry (no_retry_on)")
+                        return "", status_code, headers, redirect_chain
+
                     if attempts == self.max_retries:
                         if self.logging:
                             Logger.note(f"  ❌ Max retries reached - Status {status_code}")
-                        return "", status_code
+                        return "", status_code, headers, redirect_chain
 
                     wait_time = self.backoff_factor ** attempts
                     if self.logging:
@@ -241,13 +249,13 @@ class PlaywrightScraper:
 
                 await self._wait_for_selectors(page)
                 html: str = await page.content()
-                return html, status_code
+                return html, status_code, headers, redirect_chain
 
             except PlaywrightTimeoutError as e:
                 if attempts == self.max_retries:
                     if self.logging:
                         Logger.note(f"  ❌ Timeout - Max retries reached")
-                    return "", 408
+                    return "", 408, {}, []
 
                 wait_time = self.backoff_factor ** attempts
                 if self.logging:
@@ -261,7 +269,7 @@ class PlaywrightScraper:
                 if attempts == self.max_retries:
                     if self.logging:
                         Logger.note(f"  ❌ Error: {str(e)[:50]}... - Max retries reached")
-                    return "", 500
+                    return "", 500, {}, []
 
                 wait_time = self.backoff_factor ** attempts
                 if self.logging:
@@ -274,16 +282,13 @@ class PlaywrightScraper:
             finally:
                 await page.close()
 
-        return "", 500
+        return "", 500, {}, []
 
-    async def fetch(self) -> Tuple[str, int]:
+    async def fetch(self) -> Tuple[str, int, dict, list]:
         """Fetch the URL specified in constructor.
-        
+
         Returns:
-            Tuple[str, int]: (html_content, status_code)
-            
-        Raises:
-            ValueError: If no URL was specified in constructor.
+            Tuple[str, int, dict, list]: (html_content, status_code, headers, redirect_chain)
         """
         if not self.url:
             raise ValueError("No URL specified. Use fetch_url(url) or provide url in constructor.")

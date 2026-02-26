@@ -4,44 +4,13 @@ A Playwright-based web scraper with persistent caching, automatic browser instal
 
 ## Changelog
 
-### v0.5.0 (Latest)
-- Simplified caching to single-backend model: local JSON by default, DynamoDB when `dynamodb_table` is set (never both simultaneously)
+See [CHANGELOG.md](CHANGELOG.md) for the full version history.
 
-### v0.4.1
-- Added `load_strategies` parameter to customize the loading strategy chain
-- Defaults to `["load", "networkidle", "domcontentloaded"]` but can be overridden to skip slow strategies
+## Overview
 
-### v0.4.0
-- Added `on_progress` callback for real-time scraping progress events
-- Supports both sync and async callbacks
-- Callbacks fire at key events: browser ready, loading strategy, retries, page loaded, errors, and batch lifecycle
+GhostScraper wraps Playwright with persistent JSON caching (via `cacherator.JSONCache`), retry logic, and multiple output formats. The primary interface is `GhostScraper`. `PlaywrightScraper` is the lower-level browser automation layer used internally.
 
-### v0.3.0
-- Added DynamoDB cache support for cross-machine cache sharing
-- Simplified logging to boolean (`logging=True/False`)
-- Added `dynamodb_table` parameter to `GhostScraper` and `scrape_many()`
-
-### v0.2.1
-- Fixed RuntimeError when browser installation check runs within an active event loop
-- Improved compatibility with Linux and other Unix-like systems
-
-### v0.2.0
-- Initial stable release
-
-## Features
-
-- **Headless Browser Scraping**: Uses Playwright for reliable scraping of JavaScript-heavy websites
-- **Parallel Scraping**: Scrape multiple URLs concurrently with shared browser instances
-- **Persistent Caching**: Stores scraped data between runs for improved performance
-- **DynamoDB Cache**: Optional cross-machine cache sharing via AWS DynamoDB (replaces local cache when set)
-- **Automatic Browser Installation**: Self-installs required browsers
-- **Configurable Loading Strategies**: Override the default strategy chain per-scraper to skip slow strategies
-- **Multiple Output Formats**: HTML, Markdown, Plain Text, BeautifulSoup, SEO metadata
-- **Progress Callbacks**: Optional `on_progress` callback for real-time scraping events
-- **Boolean Logging**: Enable/disable logging with `logging=True/False`
-- **Error Handling**: Robust retry mechanism with exponential backoff
-- **Asynchronous API**: Modern async/await interface
-- **Type Hints**: Full type annotation support for better IDE integration
+All scraping methods are async. Results (`html`, `response_code`, `response_headers`, `redirect_chain`) are cached to disk on first fetch and restored on subsequent instantiation with the same URL. Derived outputs (`markdown`, `text`, `authors`, `soup`, `seo`, `article`) are computed in-memory from the cached HTML and are not persisted.
 
 ## Installation
 
@@ -49,117 +18,9 @@ A Playwright-based web scraper with persistent caching, automatic browser instal
 pip install ghostscraper
 ```
 
-## Basic Usage
+## GhostScraper
 
-### Simple Scraping
-
-```python
-import asyncio
-from ghostscraper import GhostScraper
-
-async def main():
-    # Initialize the scraper
-    scraper = GhostScraper(url="https://example.com")
-    
-    # Get the HTML content
-    html = await scraper.html()
-    print(html)
-    
-    # Get plain text content
-    text = await scraper.text()
-    print(text)
-    
-    # Get markdown version
-    markdown = await scraper.markdown()
-    print(markdown)
-
-# Run the async function
-asyncio.run(main())
-```
-
-### Batch Scraping (Parallel)
-
-```python
-import asyncio
-from ghostscraper import GhostScraper
-
-async def main():
-    urls = [
-        "https://example.com",
-        "https://www.python.org",
-        "https://github.com"
-    ]
-    
-    # Scrape multiple URLs in parallel with a shared browser
-    scrapers = await GhostScraper.scrape_many(
-        urls=urls,
-        max_concurrent=3,
-        logging=True
-    )
-    
-    # Access results from each scraper
-    for scraper in scrapers:
-        text = await scraper.text()
-        print(f"{scraper.url}: {len(text)} characters")
-
-asyncio.run(main())
-```
-
-### With Custom Options
-
-```python
-import asyncio
-from ghostscraper import GhostScraper
-
-async def main():
-    # Initialize with custom options
-    scraper = GhostScraper(
-        url="https://example.com",
-        browser_type="firefox",  # Use Firefox instead of default Chromium
-        headless=False,          # Show the browser window
-        load_timeout=60000,      # 60 seconds timeout
-        clear_cache=True,        # Clear previous cache
-        ttl=1,                   # Cache for 1 day
-        logging=True             # Enable logging
-    )
-    
-    # Get the HTML content
-    html = await scraper.html()
-    print(html)
-
-asyncio.run(main())
-```
-
-### With DynamoDB Cache
-
-```python
-import asyncio
-from ghostscraper import GhostScraper
-
-async def main():
-    # Single scraper with DynamoDB cache (replaces local cache)
-    scraper = GhostScraper(
-        url="https://example.com",
-        dynamodb_table="my-cache-table"  # Requires AWS credentials
-    )
-    html = await scraper.html()
-
-    # Batch scraping with DynamoDB
-    scrapers = await GhostScraper.scrape_many(
-        urls=["https://example.com", "https://python.org"],
-        dynamodb_table="my-cache-table"
-    )
-
-asyncio.run(main())
-```
-
-## API Reference
-
-### GhostScraper
-
-The main class for web scraping with persistent caching.
-
-#### Constructor
+### Constructor
 
 ```python
 GhostScraper(
@@ -170,83 +31,99 @@ GhostScraper(
     logging: bool = True,
     dynamodb_table: Optional[str] = None,
     on_progress: Optional[Callable] = None,
-    **kwargs
+    **kwargs  # passed to PlaywrightScraper
 )
 ```
 
 **Parameters**:
-- `url` (str): The URL to scrape.
-- `clear_cache` (bool): Whether to clear existing cache on initialization.
-- `ttl` (int): Time-to-live for cached data in days.
-- `markdown_options` (Dict[str, Any]): Options for HTML to Markdown conversion.
-- `logging` (bool): Enable/disable logging. Default: True.
-- `dynamodb_table` (str): DynamoDB table name for cross-machine caching. Default: None.
-- `on_progress` (Callable, optional): Callback fired at key scraping events. Accepts both sync and async callables. Default: None.
-- `**kwargs`: Additional options passed to PlaywrightScraper.
+- `url`: The URL to scrape.
+- `clear_cache`: Clear existing cache on initialization. Default: `False`.
+- `ttl`: Cache time-to-live in days. Default: `999`.
+- `markdown_options`: Options forwarded to `html2text.HTML2Text` for Markdown conversion.
+- `logging`: Enable/disable logging. Default: `True`.
+- `dynamodb_table`: DynamoDB table name for cross-machine caching. Replaces local cache when set. Default: `None`.
+- `on_progress`: Callback fired at key scraping events. Accepts sync and async callables. Default: `None`.
+- `**kwargs`: Forwarded to `PlaywrightScraper` (see below).
 
-**Playwright Options (passed via kwargs)**:
-- `browser_type` (str): Browser engine to use, one of "chromium", "firefox", or "webkit". Default: "chromium".
-- `headless` (bool): Whether to run the browser in headless mode. Default: True.
-- `browser_args` (Dict[str, Any]): Additional arguments to pass to the browser.
-- `context_args` (Dict[str, Any]): Additional arguments to pass to the browser context.
-- `max_retries` (int): Maximum number of retry attempts. Default: 3.
-- `backoff_factor` (float): Factor for exponential backoff between retries. Default: 2.0.
-- `network_idle_timeout` (int): Milliseconds to wait for network to be idle. Default: 10000 (10 seconds).
-- `load_timeout` (int): Milliseconds to wait for page to load. Default: 30000 (30 seconds).
-- `wait_for_selectors` (List[str]): CSS selectors to wait for before considering page loaded.
-- `load_strategies` (List[str]): Loading strategies to try in order. Default: `["load", "networkidle", "domcontentloaded"]`.
+**PlaywrightScraper kwargs**:
+- `browser_type`: `"chromium"` | `"firefox"` | `"webkit"`. Default: `"chromium"`.
+- `headless`: Run browser headlessly. Default: `True`.
+- `browser_args`: Extra args passed to `browser.launch()`.
+- `context_args`: Extra args passed to `browser.new_context()`.
+- `max_retries`: Retry attempts per URL. Default: `3`.
+- `backoff_factor`: Exponential backoff multiplier. Default: `2.0`.
+- `network_idle_timeout`: Timeout in ms for the `networkidle` strategy. Default: `3000`.
+- `load_timeout`: Timeout in ms for all other strategies. Default: `20000`.
+- `wait_for_selectors`: CSS selectors to wait for after page load.
+- `load_strategies`: Loading strategy chain. Default: `["load", "networkidle", "domcontentloaded"]`.
+- `no_retry_on`: Status codes that abort retries immediately (e.g. `[404, 410]`). Default: `None`.
 
-#### Methods
+### Instance Attributes
 
-##### `async html() -> str`
+- `url` (str): The URL this scraper was initialized with.
+- `error` (Exception | None): Set when a fetch fails under `fail_fast=False` in `scrape_many`. When set, `html()` returns `""` and `response_code()` returns `None`.
 
-Returns the raw HTML content of the page.
+### Methods
 
-##### `async response_code() -> int`
+All methods trigger a fetch (or cache restore) on first call. Subsequent calls return the cached/computed value.
 
-Returns the HTTP response code from the page request.
+#### `async html() -> str`
+Raw HTML of the page. Returns `""` if `self.error` is set.
 
-##### `async markdown() -> str`
+#### `async response_code() -> Optional[int]`
+HTTP status code. Returns `None` if `self.error` is set.
 
-Returns the page content converted to Markdown.
+#### `async response_headers() -> dict`
+HTTP response headers from the final response. Cached alongside HTML.
 
-##### `async article() -> newspaper.Article`
+#### `async redirect_chain() -> list`
+Full list of responses during navigation. Each entry: `{"url": str, "status": int}`. Cached alongside HTML.
 
-Returns a newspaper.Article object with parsed content.
+```python
+[
+    {"url": "https://example.com/old", "status": 301},
+    {"url": "https://example.com/new", "status": 200},
+]
+```
 
-##### `async text() -> str`
+#### `async final_url() -> str`
+URL of the last entry in `redirect_chain()`. Falls back to `self.url` if chain is empty.
 
-Returns the plain text content of the page.
+#### `async markdown() -> str`
+Page content converted to Markdown via `html2text`. Respects `markdown_options`.
 
-##### `async authors() -> str`
+#### `async text() -> str`
+Plain text extracted via `newspaper4k`.
 
-Returns the detected authors of the content.
+#### `async authors() -> list`
+Authors detected by `newspaper4k`.
 
-##### `async soup() -> BeautifulSoup`
+#### `async article() -> newspaper.Article`
+Full `newspaper.Article` object with parsed content.
 
-Returns a BeautifulSoup object for the page.
+#### `async soup() -> BeautifulSoup`
+`BeautifulSoup` object parsed from the HTML.
 
-##### `async seo() -> dict`
-
-Returns a dictionary of SEO metadata parsed from the page HTML. No additional network request is made. All keys are omitted if the corresponding tag is absent.
+#### `async seo() -> dict`
+SEO metadata parsed from the HTML. All keys are omitted if the corresponding tag is absent.
 
 ```python
 {
     "title": str,           # <title>
     "description": str,     # <meta name="description">
     "canonical": str,       # <link rel="canonical">
-    "robots": {             # <meta name="robots"> — raw directives as keys, e.g. {"noindex": True}
+    "robots": {             # <meta name="robots"> — directives as keys
         "noindex": True,
         "nofollow": True,
     },
-    "googlebot": { ... },   # <meta name="googlebot">, same shape as robots, omitted if absent
-    "og": {                 # <meta property="og:*"> tags, keyed by suffix
+    "googlebot": { ... },   # <meta name="googlebot">, same shape as robots
+    "og": {                 # <meta property="og:*"> keyed by suffix
         "title": str,
         "description": str,
         "image": str,
         "url": str,
     },
-    "twitter": { ... },     # <meta name="twitter:*"> tags, same pattern
+    "twitter": { ... },     # <meta name="twitter:*">, same pattern
     "hreflang": {           # <link rel="alternate" hreflang="..."> — values are lists
         "en-us": ["https://..."],
         "de": ["https://..."],
@@ -254,24 +131,96 @@ Returns a dictionary of SEO metadata parsed from the page HTML. No additional ne
 }
 ```
 
-##### `@classmethod async scrape_many(urls: List[str], max_concurrent: int = 5, logging: bool = True, **kwargs) -> List[GhostScraper]`
+#### `@classmethod async scrape_many(urls, max_concurrent=15, logging=True, fail_fast=True, **kwargs) -> List[GhostScraper]`
 
-Scrape multiple URLs in parallel using a shared browser instance.
+Scrape multiple URLs in parallel using a single shared browser instance.
 
 **Parameters**:
-- `urls` (List[str]): List of URLs to scrape.
-- `max_concurrent` (int): Maximum number of concurrent page loads. Default: 5.
-- `logging` (bool): Enable/disable logging. Default: True.
-- `on_progress` (Callable, optional): Callback fired at key scraping events. Default: None.
-- `**kwargs`: Additional options passed to GhostScraper and PlaywrightScraper.
+- `urls`: List of URLs to scrape.
+- `max_concurrent`: Max concurrent page loads. Default: `15`.
+- `logging`: Enable logging. Default: `True`.
+- `fail_fast`: If `True`, any unhandled exception aborts the entire batch. If `False`, failed scrapers have `scraper.error` set, `html()` returns `""`, `response_code()` returns `None`. Default: `True`.
+- `on_progress`: Progress callback (sync or async). Default: `None`.
+- `**kwargs`: Forwarded to `GhostScraper` and `PlaywrightScraper`.
 
-**Returns**: List of GhostScraper instances with cached results.
+**Returns**: `List[GhostScraper]` in the same order as `urls`. Already-cached URLs are skipped.
 
-### PlaywrightScraper
+## Caching
 
-Low-level browser automation class used by GhostScraper.
+- Cached fields: `_html`, `_response_code`, `_response_headers`, `_redirect_chain`.
+- Cache key: slugified URL.
+- Cache location: `data/ghostscraper/` (configurable via `ScraperDefaults.CACHE_DIRECTORY`).
+- DynamoDB cache replaces local cache when `dynamodb_table` is set. Requires AWS credentials.
+- `clear_cache=True` forces a fresh fetch and overwrites the cache.
 
-#### Constructor
+## Loading Strategies
+
+GhostScraper tries Playwright loading strategies in order, falling back on timeout:
+
+1. `load` — waits for the `load` event. Works for most sites.
+2. `networkidle` — waits until no network activity for 500ms. Better for JS-heavy pages. Uses `network_idle_timeout`.
+3. `domcontentloaded` — waits only for HTML parsing. Fastest, least complete.
+
+If all strategies fail, the attempt is retried up to `max_retries` times with exponential backoff (`backoff_factor ** attempt` seconds).
+
+Override the chain via `load_strategies`:
+
+```python
+scrapers = await GhostScraper.scrape_many(urls=urls, load_strategies=["domcontentloaded"])
+
+# Or globally:
+from ghostscraper import ScraperDefaults
+ScraperDefaults.LOAD_STRATEGIES = ["domcontentloaded"]
+```
+
+## Progress Callbacks
+
+Pass `on_progress` to receive real-time events. Accepts sync and async callables.
+
+```python
+scraper = GhostScraper(url="https://example.com", on_progress=lambda e: print(e["event"]))
+```
+
+Each event is a dict with `event` (str) and `ts` (Unix timestamp). Additional fields:
+
+| event | extra fields | notes |
+|---|---|---|
+| `started` | `url` | fired before fetch begins |
+| `browser_installing` | `browser` | first-run only; sync callback only |
+| `browser_ready` | `browser` | browser check passed |
+| `loading_strategy` | `url`, `strategy`, `attempt`, `max_retries`, `timeout` | fired per strategy attempt |
+| `retry` | `url`, `attempt`, `max_retries` + optional `reason`, `status_code` | only fires when another attempt follows |
+| `page_loaded` | `url`, `completed`, `total`, `status_code`, `scraper` | fires on success or error status; `scraper` only in `scrape_many` |
+| `error` | `url`, `message` | unhandled exception during fetch |
+| `batch_started` | `total`, `to_fetch`, `cached` | `scrape_many` only |
+| `batch_done` | `total` | `scrape_many` only |
+
+## ScraperDefaults
+
+Global defaults, modifiable at runtime before instantiation:
+
+```python
+from ghostscraper import ScraperDefaults
+
+ScraperDefaults.BROWSER_TYPE = "chromium"       # default browser
+ScraperDefaults.HEADLESS = True
+ScraperDefaults.LOAD_TIMEOUT = 20000            # ms
+ScraperDefaults.NETWORK_IDLE_TIMEOUT = 3000     # ms
+ScraperDefaults.LOAD_STRATEGIES = ["load", "networkidle", "domcontentloaded"]
+ScraperDefaults.MAX_RETRIES = 3
+ScraperDefaults.BACKOFF_FACTOR = 2.0
+ScraperDefaults.MAX_CONCURRENT = 15
+ScraperDefaults.CACHE_TTL = 999                 # days
+ScraperDefaults.CACHE_DIRECTORY = "data/ghostscraper"
+ScraperDefaults.DYNAMODB_TABLE = None
+ScraperDefaults.LOGGING = True
+```
+
+## PlaywrightScraper
+
+Low-level browser automation used internally by `GhostScraper`. Use directly only if you need raw browser control.
+
+### Constructor
 
 ```python
 PlaywrightScraper(
@@ -282,230 +231,123 @@ PlaywrightScraper(
     context_args: Optional[Dict[str, Any]] = None,
     max_retries: int = 3,
     backoff_factor: float = 2.0,
-    network_idle_timeout: int = 10000,
-    load_timeout: int = 30000,
+    network_idle_timeout: int = 3000,
+    load_timeout: int = 20000,
     wait_for_selectors: Optional[List[str]] = None,
     logging: bool = True,
-    load_strategies: Optional[List[str]] = None
+    on_progress: Optional[Callable] = None,
+    load_strategies: Optional[List[str]] = None,
+    no_retry_on: Optional[List[int]] = None
 )
 ```
 
-**Parameters**: Same as listed in GhostScraper kwargs above.
+### Methods
 
-#### Methods
+#### `async fetch() -> Tuple[str, int, dict, list]`
+Fetch `self.url`. Returns `(html, status_code, headers, redirect_chain)`.
 
-##### `async fetch() -> Tuple[str, int]`
+#### `async fetch_url(url: str) -> Tuple[str, int, dict, list]`
+Fetch a specific URL using the shared browser instance.
 
-Fetches the page and returns a tuple of (html_content, status_code).
+#### `async fetch_many(urls: List[str], max_concurrent: int = 5) -> List[Tuple[str, int, dict, list]]`
+Fetch multiple URLs in parallel.
 
-##### `async fetch_url(url: str) -> Tuple[str, int]`
+#### `async fetch_and_close() -> Tuple[str, int, dict, list]`
+Fetch and immediately close the browser.
 
-Fetches a specific URL using the shared browser instance.
+#### `async close() -> None`
+Close browser and release Playwright resources.
 
-##### `async fetch_many(urls: List[str], max_concurrent: int = 5) -> List[Tuple[str, int]]`
+#### `async check_and_install_browser() -> bool`
+Check if the configured browser is installed; install it if not. Result is cached per process.
 
-Fetches multiple URLs in parallel using a shared browser instance with concurrency control.
+Supports async context manager (`async with PlaywrightScraper(...) as browser`).
 
-##### `async fetch_and_close() -> Tuple[str, int]`
-
-Fetches the page, closes the browser, and returns a tuple of (html_content, status_code).
-
-##### `async close() -> None`
-
-Closes the browser and playwright resources.
-
-##### `async check_and_install_browser() -> bool`
-
-Checks if the required browser is installed, and installs it if not. Returns True if successful.
-
-## Progress Callbacks
-
-Pass an `on_progress` callable to receive real-time events during scraping. Both sync and async callables are supported.
+## Browser Installation Utilities
 
 ```python
-# Sync callback
-scraper = GhostScraper(url="https://example.com", on_progress=lambda e: print(e["event"]))
+from ghostscraper import check_browser_installed, install_browser
 
-# Async callback
-async def on_progress(event):
-    await queue.put(event)
-
-scraper = GhostScraper(url="https://example.com", on_progress=on_progress)
-
-# Batch scraping
-scrapers = await GhostScraper.scrape_many(urls=urls, on_progress=on_progress)
+installed = await check_browser_installed("chromium")  # bool
+install_browser("chromium")                            # sync, runs playwright install
 ```
 
-Each event is a dict with an `event` key and a `ts` Unix timestamp. Additional fields depend on the event type:
+## Usage Examples
 
-| event | fields | notes |
-|---|---|---|
-| `started` | `url` | fired before fetch begins |
-| `browser_installing` | `browser` | first-run only; sync callback only |
-| `browser_ready` | `browser` | browser check passed |
-| `loading_strategy` | `url`, `strategy`, `attempt`, `max_retries`, `timeout` | see loading strategies below |
-| `retry` | `url`, `attempt`, `max_retries` + optional `reason`, `status_code` | only fires when another attempt follows |
-| `page_loaded` | `url`, `completed`, `total`, `status_code` | fires on success or error status |
-| `error` | `url`, `message` | unhandled exception during fetch |
-| `batch_started` | `total`, `to_fetch`, `cached` | `scrape_many` only |
-| `batch_done` | `total` | `scrape_many` only |
-
-### Loading Strategies
-
-By default, GhostScraper tries three Playwright loading strategies in order, falling back if the previous times out:
-
-- `load` — waits for the `load` event (default, works for most sites)
-- `networkidle` — waits until no network activity for 500ms (better for JS-heavy pages)
-- `domcontentloaded` — waits only for HTML parsing (fastest fallback, least complete)
-
-If a URL triggers multiple `loading_strategy` events, it means earlier strategies timed out and fell back. If all strategies fail, the attempt is retried up to `max_retries` times with exponential backoff.
-
-Use `load_strategies` to override the chain. This is useful when you know a site will always time out on certain strategies:
-
-```python
-# Skip straight to domcontentloaded
-scrapers = await GhostScraper.scrape_many(
-    urls=urls,
-    load_strategies=["domcontentloaded"]
-)
-
-# Or set a global default
-from ghostscraper import ScraperDefaults
-ScraperDefaults.LOAD_STRATEGIES = ["domcontentloaded"]
-```
-
-## Advanced Usage
-
-### Configuring Global Defaults
-
-```python
-from ghostscraper import ScraperDefaults
-
-# Modify defaults for all future scraper instances
-ScraperDefaults.MAX_CONCURRENT = 20
-ScraperDefaults.LOGGING = False
-ScraperDefaults.HEADLESS = False
-ScraperDefaults.LOAD_TIMEOUT = 30000
-ScraperDefaults.DYNAMODB_TABLE = "my-cache-table"
-```
-
-### Batch Scraping with Options
+### Single URL
 
 ```python
 import asyncio
 from ghostscraper import GhostScraper
 
 async def main():
-    urls = [f"https://example.com/page{i}" for i in range(1, 11)]
-    
-    # Scrape with custom options
-    scrapers = await GhostScraper.scrape_many(
-        urls=urls,
-        max_concurrent=5,
-        browser_type="chromium",
-        headless=True,
-        load_timeout=60000,
-        ttl=7,  # Cache for 7 days
-        logging=True
-    )
-    
-    # Process results
-    for scraper in scrapers:
-        markdown = await scraper.markdown()
-        print(f"Scraped {scraper.url}")
+    scraper = GhostScraper(url="https://example.com")
+    html = await scraper.html()
+    text = await scraper.text()
+    markdown = await scraper.markdown()
+    code = await scraper.response_code()
+    headers = await scraper.response_headers()
+    seo = await scraper.seo()
 
 asyncio.run(main())
 ```
 
-### Custom Browser Configurations
+### Batch Scraping
 
 ```python
-from ghostscraper import GhostScraper
+scrapers = await GhostScraper.scrape_many(
+    urls=["https://example.com", "https://python.org"],
+    max_concurrent=5,
+    ttl=7,
+    load_strategies=["domcontentloaded"],
+)
+for scraper in scrapers:
+    print(await scraper.text())
+```
 
-# Set up a browser with custom viewport size and user agent
-browser_context_args = {
-    "viewport": {"width": 1920, "height": 1080},
-    "user_agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"
-}
+### Partial Failure Handling
 
+```python
+scrapers = await GhostScraper.scrape_many(urls=urls, fail_fast=False)
+for s in scrapers:
+    if s.error:
+        print(f"FAILED {s.url}: {s.error}")
+    else:
+        print(f"OK {s.url}: {await s.response_code()}")
+```
+
+### Redirect Chain
+
+```python
+scraper = GhostScraper(url="https://example.com/redirect")
+print(await scraper.final_url())
+for hop in await scraper.redirect_chain():
+    print(hop["status"], hop["url"])
+```
+
+### Skip Retries on Terminal Status Codes
+
+```python
+scraper = GhostScraper(url="https://example.com/missing", no_retry_on=[404, 410, 403])
+print(await scraper.response_code())
+```
+
+### DynamoDB Cache
+
+```python
+scraper = GhostScraper(url="https://example.com", dynamodb_table="my-cache-table")
+scrapers = await GhostScraper.scrape_many(urls=urls, dynamodb_table="my-cache-table")
+```
+
+### Custom Browser Context
+
+```python
 scraper = GhostScraper(
     url="https://example.com",
-    context_args=browser_context_args
+    context_args={"viewport": {"width": 1920, "height": 1080}, "user_agent": "..."},
+    wait_for_selectors=["#content", ".product-list"],
 )
 ```
-
-### Waiting for Dynamic Content
-
-```python
-from ghostscraper import GhostScraper
-
-# Wait for specific elements to load before considering the page ready
-scraper = GhostScraper(
-    url="https://example.com/dynamic-page",
-    wait_for_selectors=["#content", ".product-list", "button.load-more"]
-)
-```
-
-### Custom Markdown Options
-
-```python
-from ghostscraper import GhostScraper
-
-# Customize the markdown conversion
-markdown_options = {
-    "ignore_links": True,
-    "ignore_images": True,
-    "bullet_character": "*"
-}
-
-scraper = GhostScraper(
-    url="https://example.com",
-    markdown_options=markdown_options
-)
-```
-
-### Browser Management
-
-```python
-from ghostscraper import check_browser_installed, install_browser
-import asyncio
-
-async def setup_browsers():
-    # Check if browsers are installed
-    chromium_installed = await check_browser_installed("chromium")
-    firefox_installed = await check_browser_installed("firefox")
-    
-    # Install browsers if needed
-    if not chromium_installed:
-        install_browser("chromium")
-    
-    if not firefox_installed:
-        install_browser("firefox")
-
-asyncio.run(setup_browsers())
-```
-
-## Performance Considerations
-
-- Use caching effectively by setting appropriate TTL values
-- Use `scrape_many()` for batch scraping to share browser instances and reduce memory usage
-- Adjust `max_concurrent` based on your system resources and target website rate limits
-- Consider browser memory usage when scraping multiple pages
-- For best performance, use "chromium" as it's generally the fastest engine
-- Use `logging=False` for production to minimize overhead
-
-## Error Handling
-
-GhostScraper uses a progressive loading strategy:
-1. First attempts with `load` (fast, works for most sites)
-2. Falls back to `networkidle` if timeout occurs (better for JS-heavy pages)
-3. Finally tries `domcontentloaded` (fastest but least complete)
-
-If all strategies fail, it will retry up to `max_retries` times with exponential backoff.
-
-## License
-
-This project is licensed under the MIT License.
 
 ## Dependencies
 
@@ -518,6 +360,6 @@ This project is licensed under the MIT License.
 - cacherator
 - lxml_html_clean
 
-## Contributing
+## License
 
-Contributions are welcome! Visit the GitHub repository: https://github.com/Redundando/ghostscraper
+MIT. Contributions welcome: https://github.com/Redundando/ghostscraper

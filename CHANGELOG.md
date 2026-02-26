@@ -2,7 +2,26 @@
 
 All notable changes to this project will be documented in this file.
 
-## [0.4.1] - 2025-05-30
+## [0.6.0]
+
+### Added
+- `fail_fast` parameter on `scrape_many()` — set to `False` to continue the batch on individual URL failures instead of raising; failed scrapers expose `scraper.error`, return `""` from `html()`, and `None` from `response_code()`
+- `no_retry_on` parameter on `GhostScraper` and `scrape_many()` — skip retries for terminal status codes like 404
+- `page_loaded` progress event now includes a `scraper` field in `scrape_many` batches for immediate per-URL processing
+- `response_headers()`, `redirect_chain()`, and `final_url()` methods — all cached alongside HTML
+
+## [0.5.0]
+
+### Changed
+- Simplified caching to single-backend model: local JSON by default, DynamoDB when `dynamodb_table` is set (never both simultaneously)
+
+## [0.4.0]
+
+### Added
+- `on_progress` callback for real-time scraping progress events; supports both sync and async callables
+- Callbacks fire at key events: browser ready, loading strategy, retries, page loaded, errors, and batch lifecycle
+
+## [0.4.1]
 
 ### Added
 - `load_strategies` parameter on `PlaywrightScraper` (and via `**kwargs` on `GhostScraper`/`scrape_many()`) to override the loading strategy chain

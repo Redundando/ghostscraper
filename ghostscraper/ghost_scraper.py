@@ -60,9 +60,11 @@ class GhostScraper(JSONCache):
                           dynamodb_table=dynamodb_table)
 
         # Persisted fields (restored from cache by JSONCache if available)
-        for attr in ("_html", "_response_code"):
+        for attr in ("_html", "_response_code", "_response_headers", "_redirect_chain"):
             if not hasattr(self, attr):
                 setattr(self, attr, None)
+
+        self.error: Optional[Exception] = None
 
         # In-memory derived fields (always start as None)
         self._article: newspaper.Article | None = None
@@ -113,7 +115,7 @@ class GhostScraper(JSONCache):
                 Logger.note(f"📥 Cache miss: {self.url[:60]}... - Fetching from web")
             await self._emit({"event": "started", "url": self.url})
             try:
-                (self._html, self._response_code) = await self._fetch_response()
+                (self._html, self._response_code, self._response_headers, self._redirect_chain) = await self._fetch_response()
             except Exception as e:
                 await self._emit({"event": "error", "url": self.url, "message": str(e)})
                 raise
@@ -122,20 +124,31 @@ class GhostScraper(JSONCache):
         return {"html": self._html, "response_code": self._response_code}
 
     async def html(self) -> str:
-        """Get the raw HTML content of the page.
-        
-        Returns:
-            str: The HTML content as a string.
-        """
+        """Return the raw HTML content of the page."""
+        if self.error is not None:
+            return ""
         return (await self.get_response())["html"]
 
-    async def response_code(self) -> int:
-        """Get the HTTP response status code.
-        
-        Returns:
-            int: HTTP status code (e.g., 200, 404, 500).
-        """
+    async def response_code(self) -> Optional[int]:
+        """Return the HTTP response status code, or None if an error occurred."""
+        if self.error is not None:
+            return None
         return (await self.get_response())["response_code"]
+
+    async def response_headers(self) -> dict:
+        """Return the HTTP response headers from the final response."""
+        await self.get_response()
+        return self._response_headers or {}
+
+    async def redirect_chain(self) -> list:
+        """Return the full redirect chain as a list of dicts with 'url' and 'status' keys."""
+        await self.get_response()
+        return self._redirect_chain or []
+
+    async def final_url(self) -> str:
+        """Return the resolved final URL after following all redirects."""
+        chain = await self.redirect_chain()
+        return chain[-1]["url"] if chain else self.url
 
     async def markdown(self) -> str:
         """Convert the HTML content to Markdown format.
@@ -196,6 +209,7 @@ class GhostScraper(JSONCache):
         return self._soup
 
     async def seo(self) -> dict:
+        """Return a dict of SEO metadata parsed from the page (title, description, og, twitter, etc.)."""
         if self._seo is None:
             soup = await self.soup()
             result = {}
@@ -245,7 +259,7 @@ class GhostScraper(JSONCache):
 
     @classmethod
     async def scrape_many(cls, urls: List[str], max_concurrent: int = ScraperDefaults.MAX_CONCURRENT, 
-                         logging: bool = ScraperDefaults.LOGGING, **kwargs) -> List['GhostScraper']:
+                         logging: bool = ScraperDefaults.LOGGING, fail_fast: bool = True, **kwargs) -> List['GhostScraper']:
         """Scrape multiple URLs in parallel using a shared browser instance.
         
         This method efficiently scrapes multiple URLs by sharing a single browser
@@ -256,6 +270,7 @@ class GhostScraper(JSONCache):
             urls (List[str]): List of URLs to scrape.
             max_concurrent (int): Maximum number of concurrent page loads. Defaults to 15.
             logging (bool): Enable logging. Defaults to True.
+            fail_fast (bool): If True, any exception aborts the batch. If False, failures are captured per-scraper. Defaults to True.
             **kwargs: Additional arguments for GhostScraper (clear_cache, ttl, dynamodb_table) 
                      and PlaywrightScraper (browser_type, headless, etc.).
             
@@ -306,15 +321,23 @@ class GhostScraper(JSONCache):
                     await scraper._emit({"event": "started", "url": scraper.url})
                     async with semaphore:
                         try:
-                            html, status_code = await browser.fetch_url(scraper.url)
+                            html, status_code, headers, redirect_chain = await browser.fetch_url(scraper.url)
                         except Exception as e:
                             await scraper._emit({"event": "error", "url": scraper.url, "message": str(e)})
-                            raise
+                            if fail_fast:
+                                raise
+                            scraper.error = e
+                            scraper._html = ""
+                            scraper._response_code = None
+                            completed += 1
+                            return scraper
                         scraper._html = html
                         scraper._response_code = status_code
+                        scraper._response_headers = headers
+                        scraper._redirect_chain = redirect_chain
                         scraper.json_cache_save()
                         completed += 1
-                        await scraper._emit({"event": "page_loaded", "url": scraper.url, "completed": completed, "total": total, "status_code": status_code})
+                        await scraper._emit({"event": "page_loaded", "url": scraper.url, "completed": completed, "total": total, "status_code": status_code, "scraper": scraper})
                         return scraper
                 
                 await asyncio.gather(*[fetch_and_save(s) for s in scrapers_to_fetch], return_exceptions=True)

@@ -17,6 +17,8 @@ async def check_browser_installed(browser_name: str, logging: bool = True, on_pr
     
     Args:
         browser_name (str): Browser name - "chromium", "firefox", or "webkit".
+        logging (bool): Enable logging. Defaults to True.
+        on_progress (Callable, optional): Progress callback. Defaults to None.
         
     Returns:
         bool: True if browser is installed and working, False otherwise.
