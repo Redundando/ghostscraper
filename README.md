@@ -190,7 +190,7 @@ Each event is a dict with `event` (str) and `ts` (Unix timestamp). Additional fi
 | `browser_ready` | `browser` | browser check passed |
 | `loading_strategy` | `url`, `strategy`, `attempt`, `max_retries`, `timeout` | fired per strategy attempt |
 | `retry` | `url`, `attempt`, `max_retries` + optional `reason`, `status_code` | only fires when another attempt follows |
-| `page_loaded` | `url`, `completed`, `total`, `status_code`, `scraper` | fires on success or error status; `scraper` only in `scrape_many` |
+| `page_loaded` | `url`, `completed`, `total`, `status_code`, `scraper` | fires on success or error status; `scraper` only in `scrape_many`; fires for cached URLs too |
 | `error` | `url`, `message` | unhandled exception during fetch |
 | `batch_started` | `total`, `to_fetch`, `cached` | `scrape_many` only |
 | `batch_done` | `total` | `scrape_many` only |

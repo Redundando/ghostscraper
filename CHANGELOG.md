@@ -2,6 +2,11 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.6.1]
+
+### Fixed
+- `page_loaded` now fires for cached URLs in `scrape_many`; `completed`/`total` counts continue sequentially from live fetches
+
 ## [0.6.0]
 
 ### Added

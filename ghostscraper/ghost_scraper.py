@@ -344,6 +344,12 @@ class GhostScraper(JSONCache):
         else:
             if logging:
                 Logger.note(f"✅ All URLs found in cache - No fetching needed")
+
+        if on_progress:
+            cached_scrapers = [s for s in scrapers if s not in scrapers_to_fetch]
+            total = len(scrapers)
+            for i, scraper in enumerate(cached_scrapers, start=len(scrapers_to_fetch) + 1):
+                await scraper._emit({"event": "page_loaded", "url": scraper.url, "completed": i, "total": total, "status_code": scraper._response_code, "scraper": scraper})
         
         if logging:
             Logger.note(f"✓ Batch scrape completed: {len(urls)} URLs processed\n")
