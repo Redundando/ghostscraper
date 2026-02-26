@@ -20,7 +20,7 @@ from .ghost_scraper import GhostScraper
 from .playwright_installer import check_browser_installed, install_browser
 from .config import ScraperDefaults
 
-__version__ = "0.5.0"
+__version__ = "0.6.0"
 __all__ = [
     "GhostScraper",
     "PlaywrightScraper",
