@@ -5,7 +5,8 @@ web scraping with persistent JSON caching for efficient data retrieval.
 """
 
 from logorator import Logger
-from typing import Any, Callable, Dict, List, Optional
+import base64
+from typing import Any, Callable, Dict, List, Optional, Tuple
 
 from bs4 import BeautifulSoup
 from cacherator import Cached, JSONCache
@@ -256,6 +257,54 @@ class GhostScraper(JSONCache):
 
             self._seo = result
         return self._seo
+
+    @classmethod
+    async def fetch_bytes(
+        cls,
+        url: str,
+        cache: bool = False,
+        clear_cache: bool = False,
+        ttl: int = ScraperDefaults.CACHE_TTL,
+        dynamodb_table: Optional[str] = ScraperDefaults.DYNAMODB_TABLE,
+        logging: bool = ScraperDefaults.LOGGING,
+        **kwargs,
+    ) -> Tuple[bytes, int, dict]:
+        """Fetch a URL as raw bytes using the Playwright browser context.
+
+        Args:
+            url: URL to fetch.
+            cache: Persist result to disk/DynamoDB. Default: False.
+            clear_cache: Force re-fetch even if cached. Default: False.
+            ttl: Cache TTL in days. Default: ScraperDefaults.CACHE_TTL.
+            dynamodb_table: DynamoDB table for cross-machine caching. Default: None.
+            logging: Enable logging. Default: True.
+            **kwargs: Forwarded to PlaywrightScraper (max_retries, browser_type, etc.).
+
+        Returns:
+            Tuple[bytes, int, dict]: (body, status_code, headers)
+        """
+        if cache:
+            cache_obj = JSONCache(
+                data_id=f"bytes-{slugify(url)}",
+                directory=ScraperDefaults.CACHE_DIRECTORY,
+                clear_cache=clear_cache,
+                ttl=ttl,
+                logging=logging,
+                dynamodb_table=dynamodb_table,
+            )
+            if not clear_cache and hasattr(cache_obj, "_bytes") and cache_obj._bytes is not None:
+                return base64.b64decode(cache_obj._bytes), cache_obj._status_code, cache_obj._headers or {}
+
+        async with PlaywrightScraper(logging=logging, **kwargs) as scraper:
+            body, status_code, headers = await scraper.fetch_bytes(url)
+
+        if cache and body:
+            cache_obj._bytes = base64.b64encode(body).decode()
+            cache_obj._status_code = status_code
+            cache_obj._headers = headers
+            cache_obj.json_cache_save()
+
+        return body, status_code, headers
 
     @classmethod
     async def scrape_many(cls, urls: List[str], max_concurrent: int = ScraperDefaults.MAX_CONCURRENT, 

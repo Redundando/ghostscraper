@@ -2,6 +2,13 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.7.0]
+
+### Added
+- `GhostScraper.fetch_bytes(url)` classmethod — fetches a URL as raw bytes using the Playwright browser context (inherits UA, cookies, and headers). Useful for CDN-protected resources that block plain HTTP clients.
+- `PlaywrightScraper.fetch_bytes(url)` — low-level counterpart with the same retry/backoff logic as `fetch_url`
+- Optional caching via `cache=True`: bytes are base64-encoded and stored in a standalone cache file keyed to the resource URL. Supports `ttl`, `clear_cache`, and `dynamodb_table`.
+
 ## [0.6.1]
 
 ### Fixed

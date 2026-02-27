@@ -131,6 +131,21 @@ SEO metadata parsed from the HTML. All keys are omitted if the corresponding tag
 }
 ```
 
+#### `@classmethod async fetch_bytes(url, cache=False, clear_cache=False, ttl=999, dynamodb_table=None, logging=True, **kwargs) -> Tuple[bytes, int, dict]`
+
+Fetch a URL as raw bytes using the Playwright browser context (inherits UA, cookies, and headers). Useful for CDN-protected resources that block plain HTTP clients.
+
+**Parameters**:
+- `url`: URL to fetch.
+- `cache`: Persist result to disk/DynamoDB. Default: `False`.
+- `clear_cache`: Force re-fetch even if cached. Default: `False`.
+- `ttl`: Cache TTL in days. Default: `999`.
+- `dynamodb_table`: DynamoDB table for cross-machine caching. Default: `None`.
+- `logging`: Enable logging. Default: `True`.
+- `**kwargs`: Forwarded to `PlaywrightScraper` (`max_retries`, `browser_type`, `no_retry_on`, etc.).
+
+**Returns**: `Tuple[bytes, int, dict]` — `(body, status_code, headers)`
+
 #### `@classmethod async scrape_many(urls, max_concurrent=15, logging=True, fail_fast=True, **kwargs) -> List[GhostScraper]`
 
 Scrape multiple URLs in parallel using a single shared browser instance.
@@ -323,6 +338,15 @@ scraper = GhostScraper(url="https://example.com/redirect")
 print(await scraper.final_url())
 for hop in await scraper.redirect_chain():
     print(hop["status"], hop["url"])
+```
+
+### Fetch Raw Bytes (CDN-protected resources)
+
+```python
+body, status_code, headers = await GhostScraper.fetch_bytes(
+    "https://example.com/image.jpg",
+    cache=True,
+)
 ```
 
 ### Skip Retries on Terminal Status Codes

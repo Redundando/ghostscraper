@@ -284,6 +284,30 @@ class PlaywrightScraper:
 
         return "", 500, {}, []
 
+    async def fetch_bytes(self, url: str) -> Tuple[bytes, int, dict]:
+        """Fetch a URL as raw bytes using the browser context (inherits UA, cookies, headers).
+
+        Returns:
+            Tuple[bytes, int, dict]: (body, status_code, headers)
+        """
+        await self._ensure_browser()
+        attempts = 0
+        while attempts < self.max_retries:
+            try:
+                response = await self._context.request.get(url)
+                return await response.body(), response.status, dict(response.headers)
+            except Exception as e:
+                if attempts == self.max_retries - 1:
+                    if self.logging:
+                        Logger.note(f"  ❌ fetch_bytes error: {str(e)[:50]}... - Max retries reached")
+                    return b"", 500, {}
+                wait_time = self.backoff_factor ** attempts
+                if self.logging:
+                    Logger.note(f"  ⚠ fetch_bytes error: {str(e)[:50]}... - Retry {attempts + 1}/{self.max_retries} in {wait_time:.1f}s")
+                await asyncio.sleep(wait_time)
+                attempts += 1
+        return b"", 500, {}
+
     async def fetch(self) -> Tuple[str, int, dict, list]:
         """Fetch the URL specified in constructor.
 
