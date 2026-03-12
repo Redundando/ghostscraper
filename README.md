@@ -146,7 +146,7 @@ Fetch a URL as raw bytes using the Playwright browser context (inherits UA, cook
 
 **Returns**: `Tuple[bytes, int, dict]` — `(body, status_code, headers)`
 
-#### `@classmethod async scrape_many(urls, max_concurrent=15, logging=True, fail_fast=True, on_scraped=None, **kwargs) -> List[GhostScraper]`
+#### `@classmethod async scrape_many(urls, max_concurrent=15, logging=True, fail_fast=True, on_scraped=None, browser_restart_every=None, **kwargs) -> List[GhostScraper]`
 
 Scrape multiple URLs in parallel using a single shared browser instance.
 
@@ -156,6 +156,7 @@ Scrape multiple URLs in parallel using a single shared browser instance.
 - `logging`: Enable logging. Default: `True`.
 - `fail_fast`: If `True`, any unhandled exception aborts the entire batch. If `False`, failed scrapers have `scraper.error` set, `html()` returns `""`, `response_code()` returns `None`. Default: `True`.
 - `on_scraped`: Async or sync callback invoked immediately after each URL is fetched and cached — before the batch returns. Receives the fully-populated `GhostScraper` instance. Fires for cached URLs too. Default: `None`.
+- `browser_restart_every`: Restart the browser process after every N pages. Caps Chromium memory growth for large batches. `None` uses a single browser for the full batch. Default: `None`.
 - `on_progress`: Progress callback (sync or async). Default: `None`.
 - `**kwargs`: Forwarded to `GhostScraper` and `PlaywrightScraper`.
 
@@ -229,6 +230,7 @@ ScraperDefaults.MAX_CONCURRENT = 15
 ScraperDefaults.CACHE_TTL = 999                 # days
 ScraperDefaults.CACHE_DIRECTORY = "data/ghostscraper"
 ScraperDefaults.DYNAMODB_TABLE = None
+ScraperDefaults.BROWSER_RESTART_EVERY = None    # restart browser every N pages
 ScraperDefaults.LOGGING = True
 ```
 

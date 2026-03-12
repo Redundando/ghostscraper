@@ -308,9 +308,11 @@ class GhostScraper(JSONCache):
         return body, status_code, headers
 
     @classmethod
-    async def scrape_many(cls, urls: List[str], max_concurrent: int = ScraperDefaults.MAX_CONCURRENT, 
+    async def scrape_many(cls, urls: List[str], max_concurrent: int = ScraperDefaults.MAX_CONCURRENT,
                          logging: bool = ScraperDefaults.LOGGING, fail_fast: bool = True,
-                         on_scraped: Optional[Callable] = None, **kwargs) -> List['GhostScraper']:
+                         on_scraped: Optional[Callable] = None,
+                         browser_restart_every: Optional[int] = ScraperDefaults.BROWSER_RESTART_EVERY,
+                         **kwargs) -> List['GhostScraper']:
         """Scrape multiple URLs in parallel using a shared browser instance.
         
         This method efficiently scrapes multiple URLs by sharing a single browser
@@ -339,6 +341,7 @@ class GhostScraper(JSONCache):
         
         on_progress = kwargs.pop("on_progress", None)
         on_scraped = kwargs.pop("on_scraped", on_scraped)
+        browser_restart_every = kwargs.pop("browser_restart_every", browser_restart_every)
 
         # Separate GhostScraper kwargs from PlaywrightScraper kwargs
         playwright_kwargs = {k: v for k, v in kwargs.items() 
@@ -361,43 +364,47 @@ class GhostScraper(JSONCache):
         if scrapers_to_fetch:
             if logging:
                 Logger.note(f"🌐 Fetching {len(scrapers_to_fetch)} URLs from web...")
-            
+
             total = len(scrapers_to_fetch)
             completed = 0
 
-            async with PlaywrightScraper(logging=logging, on_progress=on_progress, **playwright_kwargs) as browser:
-                semaphore = asyncio.Semaphore(max_concurrent)
-                
-                async def fetch_and_save(scraper: 'GhostScraper'):
-                    nonlocal completed
-                    await scraper._emit({"event": "started", "url": scraper.url})
-                    async with semaphore:
-                        try:
-                            html, status_code, headers, redirect_chain = await browser.fetch_url(scraper.url)
-                        except Exception as e:
-                            await scraper._emit({"event": "error", "url": scraper.url, "message": str(e)})
-                            if fail_fast:
-                                raise
-                            scraper.error = e
-                            scraper._html = ""
-                            scraper._response_code = None
-                            completed += 1
-                            return scraper
-                        scraper._html = html
-                        scraper._response_code = status_code
-                        scraper._response_headers = headers
-                        scraper._redirect_chain = redirect_chain
-                        scraper.json_cache_save()
+            async def fetch_and_save(scraper: 'GhostScraper', browser, semaphore):
+                nonlocal completed
+                await scraper._emit({"event": "started", "url": scraper.url})
+                async with semaphore:
+                    try:
+                        html, status_code, headers, redirect_chain = await browser.fetch_url(scraper.url)
+                    except Exception as e:
+                        await scraper._emit({"event": "error", "url": scraper.url, "message": str(e)})
+                        if fail_fast:
+                            raise
+                        scraper.error = e
+                        scraper._html = ""
+                        scraper._response_code = None
                         completed += 1
-                        await scraper._emit({"event": "page_loaded", "url": scraper.url, "completed": completed, "total": total, "status_code": status_code, "scraper": scraper})
-                        if on_scraped is not None:
-                            if asyncio.iscoroutinefunction(on_scraped):
-                                await on_scraped(scraper)
-                            else:
-                                on_scraped(scraper)
                         return scraper
-                
-                await asyncio.gather(*[fetch_and_save(s) for s in scrapers_to_fetch], return_exceptions=True)
+                    scraper._html = html
+                    scraper._response_code = status_code
+                    scraper._response_headers = headers
+                    scraper._redirect_chain = redirect_chain
+                    scraper.json_cache_save()
+                    completed += 1
+                    await scraper._emit({"event": "page_loaded", "url": scraper.url, "completed": completed, "total": total, "status_code": status_code, "scraper": scraper})
+                    if on_scraped is not None:
+                        if asyncio.iscoroutinefunction(on_scraped):
+                            await on_scraped(scraper)
+                        else:
+                            on_scraped(scraper)
+                    return scraper
+
+            chunk_size = browser_restart_every or len(scrapers_to_fetch)
+            for i in range(0, len(scrapers_to_fetch), chunk_size):
+                chunk = scrapers_to_fetch[i:i + chunk_size]
+                if logging and browser_restart_every:
+                    Logger.note(f"🔄 Browser chunk {i // chunk_size + 1}: pages {i + 1}–{i + len(chunk)} of {total}")
+                async with PlaywrightScraper(logging=logging, on_progress=on_progress, **playwright_kwargs) as browser:
+                    semaphore = asyncio.Semaphore(max_concurrent)
+                    await asyncio.gather(*[fetch_and_save(s, browser, semaphore) for s in chunk], return_exceptions=True)
         else:
             if logging:
                 Logger.note(f"✅ All URLs found in cache - No fetching needed")

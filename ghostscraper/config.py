@@ -48,5 +48,8 @@ class ScraperDefaults:
     CACHE_DIRECTORY: str = "data/ghostscraper"
     DYNAMODB_TABLE: str | None = None  # Optional DynamoDB table for cross-machine caching
     
+    # Browser restart
+    BROWSER_RESTART_EVERY: int | None = None  # Restart browser every N pages; None = no restart
+
     # Logging
     LOGGING: bool = True  # Enable/disable logging
