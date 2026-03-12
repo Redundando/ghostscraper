@@ -146,7 +146,7 @@ Fetch a URL as raw bytes using the Playwright browser context (inherits UA, cook
 
 **Returns**: `Tuple[bytes, int, dict]` — `(body, status_code, headers)`
 
-#### `@classmethod async scrape_many(urls, max_concurrent=15, logging=True, fail_fast=True, **kwargs) -> List[GhostScraper]`
+#### `@classmethod async scrape_many(urls, max_concurrent=15, logging=True, fail_fast=True, on_scraped=None, **kwargs) -> List[GhostScraper]`
 
 Scrape multiple URLs in parallel using a single shared browser instance.
 
@@ -155,6 +155,7 @@ Scrape multiple URLs in parallel using a single shared browser instance.
 - `max_concurrent`: Max concurrent page loads. Default: `15`.
 - `logging`: Enable logging. Default: `True`.
 - `fail_fast`: If `True`, any unhandled exception aborts the entire batch. If `False`, failed scrapers have `scraper.error` set, `html()` returns `""`, `response_code()` returns `None`. Default: `True`.
+- `on_scraped`: Async or sync callback invoked immediately after each URL is fetched and cached — before the batch returns. Receives the fully-populated `GhostScraper` instance. Fires for cached URLs too. Default: `None`.
 - `on_progress`: Progress callback (sync or async). Default: `None`.
 - `**kwargs`: Forwarded to `GhostScraper` and `PlaywrightScraper`.
 
@@ -190,7 +191,7 @@ ScraperDefaults.LOAD_STRATEGIES = ["domcontentloaded"]
 
 ## Progress Callbacks
 
-Pass `on_progress` to receive real-time events. Accepts sync and async callables.
+Pass `on_progress` to receive real-time events. Accepts sync and async callables. Errors raised inside the callback are logged (when `logging=True`) and swallowed — they will not abort a scrape.
 
 ```python
 scraper = GhostScraper(url="https://example.com", on_progress=lambda e: print(e["event"]))
@@ -370,6 +371,24 @@ scraper = GhostScraper(
     url="https://example.com",
     context_args={"viewport": {"width": 1920, "height": 1080}, "user_agent": "..."},
     wait_for_selectors=["#content", ".product-list"],
+)
+```
+
+### Memory-Efficient Batch Processing
+
+For large batches, use `on_scraped` to process and discard each result as it arrives rather than holding all HTML in memory simultaneously:
+
+```python
+results = []
+
+async def handle(scraper: GhostScraper) -> None:
+    results.append(await scraper.text())
+    scraper._html = None  # release — already persisted to cache
+
+await GhostScraper.scrape_many(
+    urls=urls,
+    max_concurrent=10,
+    on_scraped=handle,
 )
 ```
 
