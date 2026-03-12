@@ -338,6 +338,7 @@ class GhostScraper(JSONCache):
             Logger.note(f"\n🚀 Starting batch scrape: {len(urls)} URLs | Concurrency: {max_concurrent}")
         
         on_progress = kwargs.pop("on_progress", None)
+        on_scraped = kwargs.pop("on_scraped", on_scraped)
 
         # Separate GhostScraper kwargs from PlaywrightScraper kwargs
         playwright_kwargs = {k: v for k, v in kwargs.items() 
