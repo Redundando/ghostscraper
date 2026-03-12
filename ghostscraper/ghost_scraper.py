@@ -84,8 +84,9 @@ class GhostScraper(JSONCache):
                 await self._on_progress(payload)
             else:
                 self._on_progress(payload)
-        except Exception:
-            pass
+        except Exception as e:
+            if self.logging:
+                Logger.note(f"⚠️ on_progress callback error: {e}")
 
     def __str__(self):
         return f"{self.url}"
@@ -308,7 +309,8 @@ class GhostScraper(JSONCache):
 
     @classmethod
     async def scrape_many(cls, urls: List[str], max_concurrent: int = ScraperDefaults.MAX_CONCURRENT, 
-                         logging: bool = ScraperDefaults.LOGGING, fail_fast: bool = True, **kwargs) -> List['GhostScraper']:
+                         logging: bool = ScraperDefaults.LOGGING, fail_fast: bool = True,
+                         on_scraped: Optional[Callable] = None, **kwargs) -> List['GhostScraper']:
         """Scrape multiple URLs in parallel using a shared browser instance.
         
         This method efficiently scrapes multiple URLs by sharing a single browser
@@ -387,6 +389,11 @@ class GhostScraper(JSONCache):
                         scraper.json_cache_save()
                         completed += 1
                         await scraper._emit({"event": "page_loaded", "url": scraper.url, "completed": completed, "total": total, "status_code": status_code, "scraper": scraper})
+                        if on_scraped is not None:
+                            if asyncio.iscoroutinefunction(on_scraped):
+                                await on_scraped(scraper)
+                            else:
+                                on_scraped(scraper)
                         return scraper
                 
                 await asyncio.gather(*[fetch_and_save(s) for s in scrapers_to_fetch], return_exceptions=True)
@@ -394,11 +401,16 @@ class GhostScraper(JSONCache):
             if logging:
                 Logger.note(f"✅ All URLs found in cache - No fetching needed")
 
-        if on_progress:
+        if on_progress or on_scraped:
             cached_scrapers = [s for s in scrapers if s not in scrapers_to_fetch]
             total = len(scrapers)
             for i, scraper in enumerate(cached_scrapers, start=len(scrapers_to_fetch) + 1):
                 await scraper._emit({"event": "page_loaded", "url": scraper.url, "completed": i, "total": total, "status_code": scraper._response_code, "scraper": scraper})
+                if on_scraped is not None:
+                    if asyncio.iscoroutinefunction(on_scraped):
+                        await on_scraped(scraper)
+                    else:
+                        on_scraped(scraper)
         
         if logging:
             Logger.note(f"✓ Batch scrape completed: {len(urls)} URLs processed\n")
