@@ -51,5 +51,11 @@ class ScraperDefaults:
     # Browser restart
     BROWSER_RESTART_EVERY: int | None = None  # Restart browser every N pages; None = no restart
 
+    # Stream settings
+    MAX_WORKERS: int = 2              # Concurrent subprocess workers
+    SUBPROCESS_BATCH_SIZE: int = 50   # URLs per subprocess
+    MAX_QUEUE_SIZE: int = 500         # Max pending chunks in queue
+    DEFAULT_PRIORITY: int = 5         # Default stream priority (0-10 range)
+
     # Logging
     LOGGING: bool = True  # Enable/disable logging

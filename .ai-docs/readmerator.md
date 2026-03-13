@@ -1,15 +1,15 @@
 ---
 Package: readmerator
-Version: 0.1.2
+Version: 0.1.5
 Source: https://pypi.org/project/readmerator/
-Fetched: 2026-02-23 21:34:56
+Fetched: 2026-03-13 09:44:29
 ---
 
 # readmerator
 
 > Supercharge your AI coding assistant with instant access to all your dependency documentation.
 
-Fetch and cache README files for Python dependencies, making them instantly available to AI assistants like Amazon Q, GitHub Copilot, and Cursor.
+Fetch and cache README files for Python and npm dependencies, making them instantly available to AI assistants like Amazon Q, GitHub Copilot, and Cursor.
 
 ## Why?
 
@@ -40,9 +40,9 @@ That's it! Your AI now has full context on all your dependencies.
 
 ## How It Works
 
-1. **Finds** all your dependency files (`requirements.txt`, `pyproject.toml`, `setup.py`, `setup.cfg`, `Pipfile`, `environment.yml`)
-2. **Fetches** README files from PyPI and GitHub for each package
-3. **Saves** them to `.ai-docs/` with metadata headers
+1. **Finds** all your dependency files recursively (Python: `requirements.txt`, `pyproject.toml`, etc. | npm: `package.json`)
+2. **Fetches** README files from PyPI, npm registry, and GitHub for each package
+3. **Saves** them to `.ai-docs/python/` and `.ai-docs/npm/` with metadata headers
 4. **You reference** the folder in your AI assistant
 
 ## Usage
@@ -62,11 +62,28 @@ readmerator --output-dir docs/packages
 # Specify a specific requirements file
 readmerator --source requirements.txt
 
-# Verbose output (shows source: PyPI vs GitHub)
+# Verbose output (shows source: PyPI vs GitHub vs npm)
 readmerator --verbose
+
+# Only scan root directory (no subdirectories)
+readmerator --no-recursive
+
+# Limit recursion depth
+readmerator --max-depth 2
+
+# Fetch README from a custom URL
+readmerator --url https://github.com/pallets/flask --name flask-docs
+
+# Fetch from PyPI
+readmerator --url https://pypi.org/project/requests
+
+# Fetch from npm
+readmerator --url https://www.npmjs.com/package/react
 ```
 
-By default, readmerator automatically detects and parses all dependency files in your project:
+### Supported Formats
+
+**Python:**
 - `requirements.txt`
 - `pyproject.toml` (PEP 621 and Poetry)
 - `setup.py`
@@ -74,28 +91,52 @@ By default, readmerator automatically detects and parses all dependency files in
 - `Pipfile` (Pipenv)
 - `environment.yml` (Conda)
 
+**npm:**
+- `package.json` (dependencies + devDependencies)
+
 ### Example Output
 
 ```bash
 $ readmerator --verbose
-Found 16 packages
+Found 25 packages
+  Python: 15 packages
+  npm: 10 packages
 Fetching READMEs to .ai-docs/
 
 Fetching flask...
   ✓ flask: Saved (12453 bytes) from PyPI
+Fetching react...
+  ✓ react: Saved (8234 bytes) from npm
 Fetching fastapi...
   ✓ fastapi: Saved (23891 bytes) from GitHub
 ...
 
-✓ Successfully fetched: 15
-✗ Failed: 1
-  Failed packages: private-internal-package
+Python:
+  ✓ Successfully fetched: 14
+  ✗ Failed: 1
+    Failed packages: private-internal-package
+npm:
+  ✓ Successfully fetched: 10
 
 READMEs saved to .ai-docs/
 Use '@folder .ai-docs' in your AI assistant to include documentation
 ```
 
 ## Output Format
+
+Packages are organized by ecosystem:
+
+```
+.ai-docs/
+├── python/
+│   ├── flask.md
+│   ├── requests.md
+│   └── ...
+└── npm/
+    ├── react.md
+    ├── lodash.md
+    └── ...
+```
 
 Each package gets a markdown file with metadata:
 
@@ -115,8 +156,11 @@ Fetched: 2024-01-15 10:30:00
 
 ## Features
 
-- **Multi-Format Support**: Automatically detects and parses all common Python dependency formats
-- **Smart Fetching**: Tries PyPI first, falls back to GitHub
+- **Multi-Language Support**: Python (PyPI) and npm packages
+- **Recursive Scanning**: Finds dependencies in subdirectories (monorepos, nested projects)
+- **Multi-Format Support**: Automatically detects all common Python and npm dependency formats
+- **Custom URLs**: Fetch READMEs from PyPI, npm, GitHub, or any URL
+- **Smart Fetching**: Tries PyPI/npm first, falls back to GitHub
 - **Fast**: Async/concurrent fetching
 - **Reliable**: Graceful error handling for missing packages
 - **Informative**: Progress indicators and detailed verbose mode

@@ -6,20 +6,25 @@ web scraping with persistent JSON caching for efficient data retrieval.
 
 from logorator import Logger
 import base64
+import inspect
 from typing import Any, Callable, Dict, List, Optional, Tuple
 
 from bs4 import BeautifulSoup
-from cacherator import Cached, JSONCache
 from slugify import slugify
 
 from .playwright_scraper import PlaywrightScraper
+from .scrape_cache import ScrapeCache
 from .config import ScraperDefaults
+from .stream.scrape_stream import ScrapeStream
+from .stream.models import StreamStatus
+from .stream.worker_pool import _WorkerPool
 import html2text
 import newspaper
 import asyncio
 import time
+import warnings
 
-class GhostScraper(JSONCache):
+class GhostScraper:
     """A web scraper with persistent caching and multiple output formats.
     
     GhostScraper uses Playwright for reliable JavaScript-heavy website scraping
@@ -35,19 +40,21 @@ class GhostScraper(JSONCache):
         >>> text = await scraper.text()
     """
     
-    def __init__(self, url="", clear_cache=False, ttl=ScraperDefaults.CACHE_TTL, 
+    def __init__(self, url="", cache=True, clear_cache=False, ttl=ScraperDefaults.CACHE_TTL, 
                  markdown_options: Optional[Dict[str, Any]] = None, logging: bool = ScraperDefaults.LOGGING, 
                  dynamodb_table: Optional[str] = ScraperDefaults.DYNAMODB_TABLE,
-                 on_progress: Optional[Callable] = None, **kwargs):
+                 on_progress: Optional[Callable] = None, lazy: bool = False, **kwargs):
         """Initialize a GhostScraper instance.
         
         Args:
             url (str): The URL to scrape. Defaults to empty string.
+            cache (bool): Enable caching. Defaults to True.
             clear_cache (bool): Whether to clear existing cache. Defaults to False.
             ttl (int): Time-to-live for cached data in days. Defaults to 999.
             markdown_options (Dict[str, Any], optional): Options for HTML to Markdown conversion.
             logging (bool): Enable logging. Defaults to True.
             dynamodb_table (str, optional): DynamoDB table name for cross-machine caching. Defaults to None.
+            lazy (bool): If True, skip cache restore on init. Defaults to False.
             **kwargs: Additional options passed to PlaywrightScraper (browser_type, headless, etc.).
         """
         self.url = url
@@ -55,15 +62,24 @@ class GhostScraper(JSONCache):
         self.logging = logging
         self._markdown_options = markdown_options or {}
         self._on_progress = on_progress
-        
-        JSONCache.__init__(self, data_id=f"{slugify(self.url)}", directory=ScraperDefaults.CACHE_DIRECTORY,
-                          clear_cache=clear_cache, ttl=ttl, logging=logging,
-                          dynamodb_table=dynamodb_table)
 
-        # Persisted fields (restored from cache by JSONCache if available)
-        for attr in ("_html", "_response_code", "_response_headers", "_redirect_chain"):
-            if not hasattr(self, attr):
-                setattr(self, attr, None)
+        self._cache = ScrapeCache(
+            key=slugify(self.url),
+            directory=ScraperDefaults.CACHE_DIRECTORY,
+            ttl=ttl,
+            dynamodb_table=dynamodb_table,
+            cache=cache,
+            logging=logging,
+        )
+
+        if clear_cache:
+            self._cache.delete()
+
+        # Persisted fields
+        self._html: str | None = None
+        self._response_code: int | None = None
+        self._response_headers: dict | None = None
+        self._redirect_chain: list | None = None
 
         self.error: Optional[Exception] = None
 
@@ -75,12 +91,27 @@ class GhostScraper(JSONCache):
         self._authors: str | None = None
         self._seo: dict | None = None
 
+        # Lazy-init backing field for PlaywrightScraper
+        self.__playwright_scraper: PlaywrightScraper | None = None
+
+        if not lazy:
+            self._restore_from_cache()
+
+    def _restore_from_cache(self):
+        """Load persisted fields from cache if available."""
+        data = self._cache.load()
+        if data:
+            self._html = data.get("_html")
+            self._response_code = data.get("_response_code")
+            self._response_headers = data.get("_response_headers")
+            self._redirect_chain = data.get("_redirect_chain")
+
     async def _emit(self, payload: dict):
         if self._on_progress is None:
             return
         try:
             payload["ts"] = time.time()
-            if asyncio.iscoroutinefunction(self._on_progress):
+            if inspect.iscoroutinefunction(self._on_progress):
                 await self._on_progress(payload)
             else:
                 self._on_progress(payload)
@@ -95,10 +126,11 @@ class GhostScraper(JSONCache):
         return self.__str__()
 
     @property
-    @Cached()
     def _playwright_scraper(self):
         """Lazy-loaded Playwright scraper instance."""
-        return PlaywrightScraper(url=self.url, logging=self.logging, on_progress=self._on_progress, **self.kwargs)
+        if self.__playwright_scraper is None:
+            self.__playwright_scraper = PlaywrightScraper(url=self.url, logging=self.logging, on_progress=self._on_progress, **self.kwargs)
+        return self.__playwright_scraper
 
     async def _fetch_response(self):
         """Internal method to fetch response from Playwright scraper."""
@@ -113,6 +145,10 @@ class GhostScraper(JSONCache):
             dict: Dictionary with 'html' and 'response_code' keys.
         """
         if self._response_code is None or self._html is None:
+            # Try cache first (needed for lazy-init scrapers)
+            self._restore_from_cache()
+
+        if self._response_code is None or self._html is None:
             if self.logging:
                 Logger.note(f"📥 Cache miss: {self.url[:60]}... - Fetching from web")
             await self._emit({"event": "started", "url": self.url})
@@ -121,7 +157,7 @@ class GhostScraper(JSONCache):
             except Exception as e:
                 await self._emit({"event": "error", "url": self.url, "message": str(e)})
                 raise
-            self.json_cache_save()
+            self.save_cache()
             await self._emit({"event": "page_loaded", "url": self.url, "completed": 1, "total": 1, "status_code": self._response_code})
         return {"html": self._html, "response_code": self._response_code}
 
@@ -259,6 +295,65 @@ class GhostScraper(JSONCache):
             self._seo = result
         return self._seo
 
+    # ------------------------------------------------------------------
+    # Cache helpers
+    # ------------------------------------------------------------------
+
+    def save_cache(self) -> None:
+        """Persist the four cached fields to disk / DynamoDB."""
+        self._cache.save({
+            "_html": self._html,
+            "_response_code": self._response_code,
+            "_response_headers": self._response_headers,
+            "_redirect_chain": self._redirect_chain,
+        })
+
+    def clear_cache_entry(self) -> None:
+        """Delete this URL's cache entry."""
+        self._cache.delete()
+
+    def cache_stats(self) -> dict:
+        """Return basic cache info."""
+        return {
+            "key": self._cache._key,
+            "exists": self._cache.exists(),
+        }
+
+    def cache_list_keys(self, limit: int = 100, last_key=None) -> dict:
+        """List cached keys."""
+        return self._cache.list_keys(limit=limit, last_key=last_key)
+
+    # Deprecated shims ------------------------------------------------
+
+    def json_cache_save(self):
+        warnings.warn("json_cache_save() is deprecated, use save_cache()", DeprecationWarning, stacklevel=2)
+        self.save_cache()
+
+    def json_cache_save_db(self):
+        warnings.warn("json_cache_save_db() is deprecated, use save_cache()", DeprecationWarning, stacklevel=2)
+        self.save_cache()
+
+    def json_cache_clear(self):
+        warnings.warn("json_cache_clear() is deprecated, use clear_cache_entry()", DeprecationWarning, stacklevel=2)
+        self.clear_cache_entry()
+
+    def json_cache_stats(self):
+        warnings.warn("json_cache_stats() is deprecated, use cache_stats()", DeprecationWarning, stacklevel=2)
+        return self.cache_stats()
+
+    def json_cache_list_db_keys(self, limit=100, last_key=None):
+        warnings.warn("json_cache_list_db_keys() is deprecated, use cache_list_keys()", DeprecationWarning, stacklevel=2)
+        return self.cache_list_keys(limit=limit, last_key=last_key)
+
+    @staticmethod
+    def set_logging(enabled: bool):
+        """Global logging toggle (kept for backward compat)."""
+        ScraperDefaults.LOGGING = enabled
+
+    # ------------------------------------------------------------------
+    # fetch_bytes
+    # ------------------------------------------------------------------
+
     @classmethod
     async def fetch_bytes(
         cls,
@@ -284,26 +379,28 @@ class GhostScraper(JSONCache):
         Returns:
             Tuple[bytes, int, dict]: (body, status_code, headers)
         """
-        if cache:
-            cache_obj = JSONCache(
-                data_id=f"bytes-{slugify(url)}",
-                directory=ScraperDefaults.CACHE_DIRECTORY,
-                clear_cache=clear_cache,
-                ttl=ttl,
-                logging=logging,
-                dynamodb_table=dynamodb_table,
-            )
-            if not clear_cache and hasattr(cache_obj, "_bytes") and cache_obj._bytes is not None:
-                return base64.b64decode(cache_obj._bytes), cache_obj._status_code, cache_obj._headers or {}
+        cache_obj = ScrapeCache(
+            key=f"bytes-{slugify(url)}",
+            directory=ScraperDefaults.CACHE_DIRECTORY,
+            ttl=ttl,
+            dynamodb_table=dynamodb_table,
+            cache=cache,
+            logging=logging,
+        )
+
+        if clear_cache:
+            cache_obj.delete()
+
+        if not clear_cache:
+            cached = cache_obj.load_bytes()
+            if cached is not None:
+                return cached
 
         async with PlaywrightScraper(logging=logging, **kwargs) as scraper:
             body, status_code, headers = await scraper.fetch_bytes(url)
 
-        if cache and body:
-            cache_obj._bytes = base64.b64encode(body).decode()
-            cache_obj._status_code = status_code
-            cache_obj._headers = headers
-            cache_obj.json_cache_save()
+        if body:
+            cache_obj.save_bytes(body, status_code, headers)
 
         return body, status_code, headers
 
@@ -387,11 +484,11 @@ class GhostScraper(JSONCache):
                     scraper._response_code = status_code
                     scraper._response_headers = headers
                     scraper._redirect_chain = redirect_chain
-                    scraper.json_cache_save()
+                    scraper.save_cache()
                     completed += 1
                     await scraper._emit({"event": "page_loaded", "url": scraper.url, "completed": completed, "total": total, "status_code": status_code, "scraper": scraper})
                     if on_scraped is not None:
-                        if asyncio.iscoroutinefunction(on_scraped):
+                        if inspect.iscoroutinefunction(on_scraped):
                             await on_scraped(scraper)
                         else:
                             on_scraped(scraper)
@@ -415,7 +512,7 @@ class GhostScraper(JSONCache):
             for i, scraper in enumerate(cached_scrapers, start=len(scrapers_to_fetch) + 1):
                 await scraper._emit({"event": "page_loaded", "url": scraper.url, "completed": i, "total": total, "status_code": scraper._response_code, "scraper": scraper})
                 if on_scraped is not None:
-                    if asyncio.iscoroutinefunction(on_scraped):
+                    if inspect.iscoroutinefunction(on_scraped):
                         await on_scraped(scraper)
                     else:
                         on_scraped(scraper)
@@ -427,3 +524,48 @@ class GhostScraper(JSONCache):
             await scrapers[0]._emit({"event": "batch_done", "total": len(urls)})
 
         return scrapers
+
+    @classmethod
+    def create_stream(
+        cls,
+        urls,
+        dynamodb_table=ScraperDefaults.DYNAMODB_TABLE,
+        stream_id=None,
+        priority=ScraperDefaults.DEFAULT_PRIORITY,
+        subprocess_batch_size=ScraperDefaults.SUBPROCESS_BATCH_SIZE,
+        max_concurrent=ScraperDefaults.MAX_CONCURRENT,
+        on_progress=None,
+        **kwargs,
+    ):
+        return ScrapeStream(
+            urls=urls,
+            dynamodb_table=dynamodb_table,
+            stream_id=stream_id,
+            priority=priority,
+            subprocess_batch_size=subprocess_batch_size,
+            max_concurrent=max_concurrent,
+            on_progress=on_progress,
+            **kwargs,
+        )
+
+    @classmethod
+    def get_stream_status(cls, stream_id):
+        stream = ScrapeStream._streams.get(stream_id)
+        return stream.status if stream else None
+
+    @classmethod
+    def get_all_streams(cls):
+        return [s.status for s in ScrapeStream._streams.values()]
+
+    @classmethod
+    def cancel_stream(cls, stream_id):
+        stream = ScrapeStream._streams.get(stream_id)
+        if stream:
+            stream.cancel()
+            return True
+        return False
+
+    @classmethod
+    async def shutdown(cls):
+        pool = _WorkerPool.get_pool()
+        await pool.shutdown()

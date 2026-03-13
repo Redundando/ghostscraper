@@ -1,5 +1,4 @@
 beautifulsoup4
-cacherator>=1.2.4
 html2text
 logorator
 newspaper4k

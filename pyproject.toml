@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "ghostscraper"
-version = "0.8.0"
+version = "0.9.0"
 description = "A Playwright-based web scraper with persistent caching, parallel scraping, progress callbacks, and multiple output formats"
 readme = "README.md"
 authors = [
@@ -29,7 +29,7 @@ keywords = ["scraping", "web-scraping", "playwright", "async", "caching", "paral
 requires-python = ">=3.8"
 dependencies = [
     "beautifulsoup4",
-    "cacherator",
+    "dynamorator",
     "html2text",
     "logorator",
     "newspaper4k",
@@ -43,7 +43,11 @@ dependencies = [
 "Bug Tracker" = "https://github.com/Redundando/ghostscraper/issues"
 
 [tool.setuptools]
-packages = ["ghostscraper"]
+packages = ["ghostscraper", "ghostscraper.stream"]
 
 [tool.setuptools.package-data]
 ghostscraper = ["py.typed"]
+
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"

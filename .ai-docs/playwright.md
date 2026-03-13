@@ -2,7 +2,7 @@
 Package: playwright
 Version: 1.58.0
 Source: https://pypi.org/project/playwright/
-Fetched: 2026-02-23 21:34:56
+Fetched: 2026-03-13 09:44:29
 ---
 
 # 🎭 [Playwright](https://playwright.dev) for Python [![PyPI version](https://badge.fury.io/py/playwright.svg)](https://pypi.python.org/pypi/playwright/) [![Anaconda version](https://img.shields.io/conda/v/microsoft/playwright)](https://anaconda.org/Microsoft/playwright) [![Join Discord](https://img.shields.io/badge/join-discord-infomational)](https://aka.ms/playwright/discord)

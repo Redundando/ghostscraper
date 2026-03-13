@@ -2,7 +2,7 @@
 Package: publisherator
 Version: 0.1.7
 Source: https://pypi.org/project/publisherator/
-Fetched: 2026-02-23 21:34:56
+Fetched: 2026-03-13 09:44:29
 ---
 
 # Publisherator

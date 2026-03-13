@@ -2,7 +2,7 @@
 Package: beautifulsoup4
 Version: 4.14.3
 Source: https://pypi.org/project/beautifulsoup4/
-Fetched: 2026-02-23 21:34:56
+Fetched: 2026-03-13 09:44:29
 ---
 
 Beautiful Soup is a library that makes it easy to scrape information

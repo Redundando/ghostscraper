@@ -5,6 +5,7 @@ automatic browser installation, retry mechanisms, and multiple loading strategie
 """
 
 import asyncio
+import inspect
 import time
 from typing import Any, Callable, Dict, List, Literal, Optional, Tuple
 
@@ -83,7 +84,7 @@ class PlaywrightScraper:
             return
         try:
             payload["ts"] = time.time()
-            if asyncio.iscoroutinefunction(self._on_progress):
+            if inspect.iscoroutinefunction(self._on_progress):
                 await self._on_progress(payload)
             else:
                 self._on_progress(payload)
