@@ -81,11 +81,12 @@ class ScrapeStream:
             return
         from slugify import slugify
 
+        cache = self._kwargs.get("cache", True)
         clear_cache = self._kwargs.get("clear_cache", False)
         ttl = self._kwargs.get("ttl", ScraperDefaults.CACHE_TTL)
 
         for url in self._urls:
-            if clear_cache:
+            if not cache or clear_cache:
                 self._uncached_urls.append(url)
                 continue
             cache = ScrapeCache(

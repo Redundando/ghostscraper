@@ -2,6 +2,11 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.9.4]
+
+### Fixed
+- **`cache=False` not honoured in `ScrapeStream`** — `_check_cache` in `ScrapeStream` was routing URLs to `_cached_urls` even when `cache=False` was passed to `create_stream`. Those URLs were then yielded directly from the parent process via a cache restore, bypassing the subprocess entirely. The fix short-circuits all URLs to `_uncached_urls` when `cache=False`, ensuring live fetches are always performed.
+
 ## [0.9.2]
 
 ### Fixed
