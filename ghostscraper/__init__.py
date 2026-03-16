@@ -21,7 +21,7 @@ from .playwright_installer import check_browser_installed, install_browser
 from .config import ScraperDefaults
 from .stream import ScrapeStream, StreamStatus
 
-__version__ = "0.9.1"
+__version__ = "0.9.3"
 __all__ = [
     "GhostScraper",
     "PlaywrightScraper",
