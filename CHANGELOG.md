@@ -2,6 +2,12 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.9.2]
+
+### Fixed
+- **`create_stream` kwargs leak** — GhostScraper-specific kwargs (`cache`, `clear_cache`, `ttl`, `lazy`, `markdown_options`) passed to `create_stream` were forwarded unfiltered into the subprocess worker, which passed them straight to `PlaywrightScraper.__init__()`, causing a `TypeError`. The worker now strips these keys and passes them correctly to `GhostScraper` via `scrape_many`.
+- **`scrape_many` kwargs leak** — same `cache` and `lazy` keys were also missing from the `playwright_kwargs` exclusion list in `scrape_many`, meaning calling `scrape_many(urls, cache=False)` directly would hit the same `TypeError`.
+
 ## [0.9.0]
 
 ### Added

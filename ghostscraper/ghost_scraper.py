@@ -442,7 +442,7 @@ class GhostScraper:
 
         # Separate GhostScraper kwargs from PlaywrightScraper kwargs
         playwright_kwargs = {k: v for k, v in kwargs.items() 
-                            if k not in ['clear_cache', 'ttl', 'dynamodb_table', 'markdown_options']}
+                            if k not in ['cache', 'clear_cache', 'ttl', 'dynamodb_table', 'markdown_options', 'lazy']}
         
         # Create scraper instances
         scrapers = [cls(url=url, logging=logging, on_progress=on_progress, **kwargs) for url in urls]

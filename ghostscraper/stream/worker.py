@@ -26,7 +26,9 @@ async def worker_main(config_path: str):
     dynamodb_table = config.pop("dynamodb_table", None)
     max_concurrent = config.pop("max_concurrent", 15)
 
-    # Remaining keys are forwarded to GhostScraper / PlaywrightScraper
+    # Strip GhostScraper-only keys that PlaywrightScraper doesn't accept
+    _GHOST_ONLY = {"cache", "clear_cache", "ttl", "lazy", "markdown_options"}
+    ghost_kwargs = {k: config.pop(k) for k in _GHOST_ONLY if k in config}
     kwargs = config
 
     from ghostscraper import GhostScraper
@@ -51,6 +53,7 @@ async def worker_main(config_path: str):
         on_scraped=on_scraped,
         on_progress=on_progress,
         dynamodb_table=dynamodb_table,
+        **ghost_kwargs,
         **kwargs,
     )
 

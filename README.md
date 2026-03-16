@@ -55,7 +55,7 @@ GhostScraper(
 | `dynamodb_table` | `str` | `None` | DynamoDB table name. When set, replaces local cache with DynamoDB |
 | `on_progress` | `Callable` | `None` | Progress callback (sync or async). Errors are swallowed |
 | `lazy` | `bool` | `False` | Skip cache restore on init. Used internally by `ScrapeStream` |
-| `**kwargs` | | | Forwarded to `PlaywrightScraper` (see below) |
+| `**kwargs` | | | Forwarded to `PlaywrightScraper` (see below). Note: `cache`, `clear_cache`, `ttl`, `lazy`, and `markdown_options` are consumed by `GhostScraper` and never reach `PlaywrightScraper` |
 
 **PlaywrightScraper kwargs** (passable to GhostScraper):
 
