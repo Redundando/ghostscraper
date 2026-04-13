@@ -81,22 +81,22 @@ class ScrapeStream:
             return
         from slugify import slugify
 
-        cache = self._kwargs.get("cache", True)
+        use_cache = self._kwargs.get("cache", True)
         clear_cache = self._kwargs.get("clear_cache", False)
         ttl = self._kwargs.get("ttl", ScraperDefaults.CACHE_TTL)
 
         for url in self._urls:
-            if not cache or clear_cache:
+            if not use_cache or clear_cache:
                 self._uncached_urls.append(url)
                 continue
-            cache = ScrapeCache(
+            sc = ScrapeCache(
                 key=slugify(url),
                 directory=ScraperDefaults.CACHE_DIRECTORY,
                 ttl=ttl,
                 dynamodb_table=self._dynamodb_table,
                 logging=False,
             )
-            if cache.exists():
+            if sc.exists():
                 self._cached_urls.append(url)
             else:
                 self._uncached_urls.append(url)

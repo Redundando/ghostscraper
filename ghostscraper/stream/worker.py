@@ -29,6 +29,10 @@ async def worker_main(config_path: str):
     # Strip GhostScraper-only keys that PlaywrightScraper doesn't accept
     _GHOST_ONLY = {"cache", "clear_cache", "ttl", "lazy", "markdown_options"}
     ghost_kwargs = {k: config.pop(k) for k in _GHOST_ONLY if k in config}
+    # Remove keys that scrape_many accepts as explicit args to avoid duplicates
+    _EXPLICIT = {"logging", "fail_fast", "max_concurrent", "on_scraped", "on_progress", "browser_restart_every"}
+    for k in _EXPLICIT:
+        config.pop(k, None)
     kwargs = config
 
     from ghostscraper import GhostScraper

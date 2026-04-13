@@ -142,7 +142,10 @@ class PlaywrightScraper:
 
             self._browser = await browser_launcher.launch(**launch_kwargs)
 
-            self._context = await self._browser.new_context(**self.context_args)
+            context_kwargs = dict(self.context_args)
+            if self.proxy and "proxy" not in context_kwargs:
+                context_kwargs["proxy"] = {"server": self.proxy}
+            self._context = await self._browser.new_context(**context_kwargs)
 
     async def _try_progressive_load(self, page: Page, url: str, attempt: int = 0) -> Tuple[bool, int, dict, list]:
         """Try loading strategies in order, falling back on timeout.
