@@ -43,18 +43,16 @@ async def worker_main(config_path: str):
         if scraper.error:
             _emit({"type": "failed", "url": scraper.url, "message": str(scraper.error)})
         else:
-            _emit({
-                "type": "completed",
-                "url": scraper.url,
-                "html": scraper._html,
-                "response_code": scraper._response_code,
-                "response_headers": scraper._response_headers,
-                "redirect_chain": scraper._redirect_chain,
-            })
+            _emit({"type": "completed", "url": scraper.url, "response_code": scraper._response_code})
         completed_urls.add(scraper.url)
 
     def on_progress(event: dict):
         _emit({"type": "progress", **event})
+
+    # Always write to local cache so the parent can read results (IPC).
+    # The user's cache=False preference is handled by the parent after reading.
+    ghost_kwargs["cache"] = True
+    ghost_kwargs.pop("clear_cache", None)
 
     await GhostScraper.scrape_many(
         urls=urls,

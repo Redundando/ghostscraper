@@ -128,7 +128,7 @@ class ScrapeStream:
                 logging=False,
                 lazy=True,
                 **{k: v for k, v in self._kwargs.items()
-                   if k in ("ttl", "cache")},
+                   if k in ("ttl",)},
             )
             self._completed += 1
             await self._emit({
@@ -195,18 +195,19 @@ class ScrapeStream:
 
                 url = msg["url"]
                 if msg["type"] == "completed":
+                    # Subprocess always writes to local cache for IPC.
+                    # Read from it, then clean up if user wanted cache=False.
                     scraper = GhostScraper(
                         url=url,
                         dynamodb_table=self._dynamodb_table,
                         logging=False,
-                        lazy=True,
+                        lazy=False,
+                        cache=True,
                         **{k: v for k, v in self._kwargs.items()
-                           if k in ("ttl", "cache")},
+                           if k in ("ttl",)},
                     )
-                    scraper._html = msg.get("html")
-                    scraper._response_code = msg.get("response_code")
-                    scraper._response_headers = msg.get("response_headers")
-                    scraper._redirect_chain = msg.get("redirect_chain")
+                    if not self._kwargs.get("cache", True):
+                        scraper.clear_cache_entry()
                     self._completed += 1
                 else:
                     scraper = GhostScraper(url=url, logging=False)
