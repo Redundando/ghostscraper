@@ -43,7 +43,14 @@ async def worker_main(config_path: str):
         if scraper.error:
             _emit({"type": "failed", "url": scraper.url, "message": str(scraper.error)})
         else:
-            _emit({"type": "completed", "url": scraper.url})
+            _emit({
+                "type": "completed",
+                "url": scraper.url,
+                "html": scraper._html,
+                "response_code": scraper._response_code,
+                "response_headers": scraper._response_headers,
+                "redirect_chain": scraper._redirect_chain,
+            })
         completed_urls.add(scraper.url)
 
     def on_progress(event: dict):

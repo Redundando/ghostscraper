@@ -128,7 +128,7 @@ class ScrapeStream:
                 logging=False,
                 lazy=True,
                 **{k: v for k, v in self._kwargs.items()
-                   if k in ("ttl",)},
+                   if k in ("ttl", "cache")},
             )
             self._completed += 1
             await self._emit({
@@ -201,8 +201,12 @@ class ScrapeStream:
                         logging=False,
                         lazy=True,
                         **{k: v for k, v in self._kwargs.items()
-                           if k in ("ttl",)},
+                           if k in ("ttl", "cache")},
                     )
+                    scraper._html = msg.get("html")
+                    scraper._response_code = msg.get("response_code")
+                    scraper._response_headers = msg.get("response_headers")
+                    scraper._redirect_chain = msg.get("redirect_chain")
                     self._completed += 1
                 else:
                     scraper = GhostScraper(url=url, logging=False)
