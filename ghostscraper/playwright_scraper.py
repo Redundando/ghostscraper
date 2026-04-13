@@ -147,6 +147,15 @@ class PlaywrightScraper:
                 context_kwargs["proxy"] = {"server": self.proxy}
             self._context = await self._browser.new_context(**context_kwargs)
 
+            # Warm up proxy connection before concurrent page loads
+            if self.proxy:
+                try:
+                    page = await self._context.new_page()
+                    await page.goto("https://www.google.com/robots.txt", wait_until="commit", timeout=10000)
+                    await page.close()
+                except Exception:
+                    pass
+
     async def _try_progressive_load(self, page: Page, url: str, attempt: int = 0) -> Tuple[bool, int, dict, list]:
         """Try loading strategies in order, falling back on timeout.
 
