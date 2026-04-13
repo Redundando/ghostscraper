@@ -41,7 +41,8 @@ class PlaywrightScraper:
                  logging: bool = ScraperDefaults.LOGGING,
                  on_progress: Optional[Callable] = None,
                  load_strategies: Optional[List[str]] = None,
-                 no_retry_on: Optional[List[int]] = None
+                 no_retry_on: Optional[List[int]] = None,
+                 proxy: Optional[str] = ScraperDefaults.PROXY
     ):
         """Initialize a PlaywrightScraper instance.
         
@@ -59,6 +60,7 @@ class PlaywrightScraper:
             logging (bool): Enable logging. Defaults to True.
             load_strategies (List[str], optional): Loading strategies to try in order. Defaults to ["load", "networkidle", "domcontentloaded"].
             no_retry_on (List[int], optional): Status codes that skip retries immediately. Defaults to None.
+            proxy (str, optional): Proxy server URL (e.g. "socks5://localhost:1080"). Defaults to None.
         """
         self.url = url
         self.browser_type: str = browser_type
@@ -74,6 +76,7 @@ class PlaywrightScraper:
         self._on_progress = on_progress
         self.load_strategies: List[str] = load_strategies if load_strategies is not None else ScraperDefaults.LOAD_STRATEGIES
         self.no_retry_on: List[int] = no_retry_on or []
+        self.proxy: Optional[str] = proxy
         self._playwright: Optional[Playwright] = None
         self._browser: Optional[Browser] = None
         self._context: Optional[BrowserContext] = None
@@ -132,7 +135,12 @@ class PlaywrightScraper:
             else:
                 raise ValueError(f"Unknown browser type: {self.browser_type}")
 
-            self._browser = await browser_launcher.launch(headless=self.headless, **self.browser_args)
+            launch_kwargs = {"headless": self.headless}
+            if self.proxy:
+                launch_kwargs["proxy"] = {"server": self.proxy}
+            launch_kwargs.update(self.browser_args)
+
+            self._browser = await browser_launcher.launch(**launch_kwargs)
 
             self._context = await self._browser.new_context(**self.context_args)
 

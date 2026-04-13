@@ -72,6 +72,7 @@ GhostScraper(
 | `wait_for_selectors` | `list` | `None` | CSS selectors to wait for after page load |
 | `load_strategies` | `list` | `["load", "networkidle", "domcontentloaded"]` | Loading strategy chain, tried in order |
 | `no_retry_on` | `list` | `None` | Status codes that skip retries (e.g. `[404, 410]`) |
+| `proxy` | `str` | `None` | Proxy server URL (e.g. `"socks5://localhost:1080"`, `"http://proxy:8080"`). For full proxy dict with `username`/`password`/`bypass`, use `browser_args={"proxy": {...}}` instead |
 
 ### Instance Attributes
 
@@ -376,6 +377,7 @@ ScraperDefaults.CACHE_TTL = 999                 # days
 ScraperDefaults.CACHE_DIRECTORY = "data/ghostscraper"
 ScraperDefaults.DYNAMODB_TABLE = None
 ScraperDefaults.BROWSER_RESTART_EVERY = None
+ScraperDefaults.PROXY = None                    # e.g. "socks5://localhost:1080"
 ScraperDefaults.LOGGING = True
 
 # Stream settings

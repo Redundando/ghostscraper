@@ -28,6 +28,7 @@ class ScraperDefaults:
     # Browser settings
     BROWSER_TYPE: Literal["chromium", "firefox", "webkit"] = "chromium"
     HEADLESS: bool = True
+    PROXY: str | None = None  # e.g. "socks5://localhost:1080" or "http://proxy:8080"
     
     # Timeout settings (in milliseconds)
     NETWORK_IDLE_TIMEOUT: int = 3000   # 3 seconds (reduced from 10s)
