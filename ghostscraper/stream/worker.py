@@ -52,7 +52,6 @@ async def worker_main(config_path: str):
     # Always write to local cache so the parent can read results (IPC).
     # The user's cache=False preference is handled by the parent after reading.
     ghost_kwargs["cache"] = True
-    ghost_kwargs.pop("clear_cache", None)
 
     await GhostScraper.scrape_many(
         urls=urls,
